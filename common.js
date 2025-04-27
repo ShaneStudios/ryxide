@@ -1,4 +1,4 @@
-const LS_PROJECTS_LIST_KEY = 'ryxide_projects_list_v3'; // Ensure consistent key usage
+const LS_PROJECTS_LIST_KEY = 'ryxide_projects_list_v3';
 const LS_PROJECT_KEY_PREFIX = 'ryxide_project_v3_';
 const LS_CURRENT_PROJECT_ID_KEY = 'ryxide_current_project_id_v3';
 const LS_GEMINI_API_KEY = 'ryxide_gemini_api_key_v3';
@@ -7,12 +7,14 @@ const DEFAULT_SETTINGS = {
     theme: 'vs-dark',
     autoSave: false,
 };
+
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
 }
+
 function getLanguageFromFilename(filename) {
     const extension = filename?.split('.').pop()?.toLowerCase();
     const langMap = {
@@ -35,6 +37,7 @@ function getLanguageFromFilename(filename) {
     };
     return langMap[extension] || 'plaintext';
 }
+
 function formatDate(timestamp) {
     if (!timestamp) return 'N/A';
     try {
@@ -44,10 +47,10 @@ function formatDate(timestamp) {
             timeStyle: 'short'
         });
     } catch (e) {
-        console.warn("Error formatting date:", timestamp, e);
         return 'Invalid Date';
     }
 }
+
 function escapeHtml(unsafe) {
     if (typeof unsafe !== 'string') return '';
     return unsafe
@@ -57,6 +60,7 @@ function escapeHtml(unsafe) {
          .replace(/"/g, "&quot;")
          .replace(/'/g, "&#039;");
 }
+
 function safeLocalStorageGet(key, defaultValue = null) {
     try {
         const item = localStorage.getItem(key);
@@ -66,6 +70,7 @@ function safeLocalStorageGet(key, defaultValue = null) {
         return defaultValue;
     }
 }
+
 function safeLocalStorageSet(key, value) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
@@ -73,13 +78,14 @@ function safeLocalStorageSet(key, value) {
     } catch (e) {
         console.error(`Error setting localStorage key "${key}":`, e);
         if (e.name === 'QuotaExceededError') {
-            alert(`Storage limit reached! Cannot save data for "${key}". Please clear some space or delete old projects.`);
+            alert(`Storage limit reached! Cannot save data for "${key}".`);
         } else {
-            alert(`Error saving data for key "${key}". LocalStorage might be disabled or full.`);
+            alert(`Error saving data for key "${key}".`);
         }
         return false;
     }
 }
+
 function safeLocalStorageRemove(key) {
      try {
         localStorage.removeItem(key);
@@ -89,6 +95,7 @@ function safeLocalStorageRemove(key) {
         return false;
      }
 }
+
 function getAllProjectsList() { return safeLocalStorageGet(LS_PROJECTS_LIST_KEY, []); }
 function saveAllProjectsList(list) { return safeLocalStorageSet(LS_PROJECTS_LIST_KEY, list); }
 function getProjectFromStorage(projectId) { return projectId ? safeLocalStorageGet(LS_PROJECT_KEY_PREFIX + projectId) : null; }
@@ -126,17 +133,20 @@ function saveApiKey(key) { return safeLocalStorageSet(LS_GEMINI_API_KEY, key ?? 
 function getApiKey() { return safeLocalStorageGet(LS_GEMINI_API_KEY); }
 function getSettings() { return safeLocalStorageGet(LS_SETTINGS_KEY, { ...DEFAULT_SETTINGS }); }
 function saveSettings(settings) { return safeLocalStorageSet(LS_SETTINGS_KEY, settings); }
+
 function showLoader(loaderOverlay, loaderTextElement, text = "Loading...") {
     if (loaderOverlay && loaderTextElement) {
         loaderTextElement.textContent = text;
         loaderOverlay.classList.remove('modal-hidden');
     }
 }
+
 function hideLoader(loaderOverlay) {
      if (loaderOverlay) {
         loaderOverlay.classList.add('modal-hidden');
      }
 }
+
 function showModal(modalBackdrop, modalElement) {
     if (!modalBackdrop || !modalElement) return;
     modalBackdrop.classList.remove('modal-hidden');
@@ -144,11 +154,13 @@ function showModal(modalBackdrop, modalElement) {
     const focusable = modalElement.querySelector('input:not([type="hidden"]), select, textarea, button:not([disabled])');
     focusable?.focus();
 }
+
 function hideModal(modalBackdrop, ...modalElements) {
      if (!modalBackdrop) return;
      modalBackdrop.classList.add('modal-hidden');
      modalElements.forEach(el => el?.classList.add('modal-hidden'));
 }
+
 function createDOMElement(tag, options = {}) {
     const element = document.createElement(tag);
     if (options.className) element.className = options.className;
@@ -179,71 +191,98 @@ function createDOMElement(tag, options = {}) {
     }
     return element;
 }
+
 async function callGeminiApi(prompt, apiKey, history = []) {
      if (!apiKey) {
         return { error: "API Key not set. Please add it in Settings." };
      }
-     if (!window.google?.generativeai?.GoogleGenerativeAI) {
-          return { error: "Gemini AI library not loaded. Please ensure the SDK script is present and loaded correctly." };
-     }
-     try {
-         const genAI = new window.google.generativeai.GoogleGenerativeAI(apiKey);
-         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-preview-3-25" });
-         const chat = model.startChat({
-             history: history,
-             generationConfig: {
-                 maxOutputTokens: 65536,
+
+     const modelName = "gemini-1.5-flash-latest";
+     const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+     const requestBody = {
+         contents: [
+             ...history,
+             {
+                 role: "user",
+                 parts: [{ text: prompt }]
              }
+         ],
+         generationConfig: {}
+     };
+
+     try {
+         const response = await fetch(API_ENDPOINT, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', },
+             body: JSON.stringify(requestBody)
          });
-         console.log("Sending prompt to Gemini:", prompt);
-         const result = await chat.sendMessage(prompt);
-         const response = await result.response;
-         const text = response.text();
-         console.log("Received response from Gemini");
-         return { text: text };
-     } catch (error) {
-         console.error("Gemini API Error:", error);
-         let message = `Gemini API Error: ${error.message}`;
-         if (error.message?.includes('API key not valid') || error.status === 'PERMISSION_DENIED') {
-            message = "Gemini API Error: API key not valid or permissions denied. Please check your key in Settings.";
-         } else if (error.message?.includes('quota') || error.status === 'RESOURCE_EXHAUSTED') {
-            message = "Gemini API Error: You might have exceeded your API usage quota.";
-         } else if (error.status === 'INVALID_ARGUMENT') {
-            message = `Gemini API Error: Invalid argument sent to the API. Check the console for details. (${error.message})`;
+
+         const responseData = await response.json();
+
+         if (!response.ok) {
+             console.error("Gemini REST API Error Response:", responseData);
+             let errorMessage = `API Error (${response.status}): ${responseData.error?.message || 'Unknown API error.'}`;
+             if (responseData.error?.details) {
+                errorMessage += ` Details: ${JSON.stringify(responseData.error.details)}`;
+             }
+              if (response.status === 400) errorMessage += " (Check API key or request format)";
+              if (response.status === 429) errorMessage += " (Quota exceeded)";
+             return { error: errorMessage };
          }
-         return { error: message };
+
+         const generatedText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+         if (generatedText !== undefined) {
+             return { text: generatedText };
+         } else {
+             console.error("Gemini REST API - Unexpected response structure:", responseData);
+             const finishReason = responseData.candidates?.[0]?.finishReason;
+             const safetyRatings = responseData.promptFeedback?.safetyRatings || responseData.candidates?.[0]?.safetyRatings;
+             if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || safetyRatings?.some(r => r.blocked)) {
+                 return { error: `Content generation blocked due to safety reasons (Finish Reason: ${finishReason}).` };
+             }
+             return { error: "Failed to extract generated text from API response." };
+         }
+
+     } catch (error) {
+         console.error("Network or Fetch Error calling Gemini REST API:", error);
+         return { error: `Network Error: ${error.message}. Could not reach Gemini API.` };
      }
 }
+
 const projectTemplates = {
     web_basic: [
         { name: 'index.html', language: 'html', content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<title>\${projectName}</title>\n\t<link rel="stylesheet" href="style.css">\n</head>\n<body>\n\t<h1>Hello, \${projectName}!</h1>\n\t<p>Welcome to your new RyxIDE project.</p>\n\t<script src="script.js"></script>\n</body>\n</html>` },
         { name: 'style.css', language: 'css', content: `body {\n\tfont-family: sans-serif;\n\tpadding: 20px;\n\tline-height: 1.6;\n\tbackground-color: #f4f4f4;\n\tcolor: #333;\n}\n\nh1 {\n\tcolor: steelblue;\n}` },
-        { name: 'script.js', language: 'javascript', content: `console.log('Project script for \${projectName} loaded!');\n\ndocument.addEventListener('DOMContentLoaded', () => {\n\tconsole.log('DOM fully loaded and parsed');\n\t// Add your JavaScript code here\n});` }
+        { name: 'script.js', language: 'javascript', content: `console.log('Project script for \${projectName} loaded!');\n\ndocument.addEventListener('DOMContentLoaded', () => {\n\tconsole.log('DOM fully loaded and parsed');\n\t\n});` }
     ],
     python_basic: [
-        { name: 'main.py', language: 'python', content: `import sys\n\nprint(f"Hello from Python {sys.version} in \${projectName}!")\n\ndef main():\n\tprint("Running main function...")\n\t# Your Python code here\n\nif __name__ == "__main__":\n\tmain()` }
+        { name: 'main.py', language: 'python', content: `import sys\n\nprint(f"Hello from Python {sys.version} in \${projectName}!")\n\ndef main():\n\tprint("Running main function...")\n\t\n\nif __name__ == "__main__":\n\tmain()` }
     ],
      markdown_basic: [
         { name: 'README.md', language: 'markdown', content: `# \${projectName}\n\nThis is the README file for the \${projectName} project created in RyxIDE.` }
      ],
     empty: []
 };
+
 const starterContentByLanguage = {
-     html: `<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<title>New Page</title>\n\t<link rel="stylesheet" href="style.css"> <!-- Adjust if needed -->\n</head>\n<body>\n\t<h1>New HTML File</h1>\n\t<p>Content goes here.</p>\n\t<script src="script.js"></script> <!-- Adjust if needed -->\n</body>\n</html>`,
-     css: `/* Your CSS styles go here */\n\nbody {\n\tfont-family: sans-serif;\n}`,
-     javascript: `console.log("New JavaScript file created!");\n\n// Add your code here\n`,
-     python: `import sys\n\nprint(f"Python {sys.version}")\n\n# Your Python code here\n`,
-     markdown: `# New Markdown File\n\nStart writing your documentation or notes here.\n`,
+     html: `<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<title>New Page</title>\n\t<link rel="stylesheet" href="style.css">\n</head>\n<body>\n\t<h1>New HTML File</h1>\n\t<p>Content goes here.</p>\n\t<script src="script.js"></script>\n</body>\n</html>`,
+     css: `body {\n\tfont-family: sans-serif;\n}`,
+     javascript: `console.log("New JavaScript file created!");\n\n`,
+     python: `import sys\n\nprint(f"Python {sys.version}")\n\n`,
+     markdown: `# New Markdown File\n\n`,
      ruby: `# New Ruby File\n\nputs "Hello from Ruby!"\n`,
-     csharp: `// New C# File\nusing System;\n\npublic class Program\n{\n\tpublic static void Main(string[] args)\n\t{\n\t\tConsole.WriteLine("New C# File!");\n\t}\n}`,
-     java: `// New Java File\npublic class Main {\n\tpublic static void main(String[] args) {\n\t\tSystem.out.println("New Java File!");\n\t}\n}`,
-     cpp: `// New C++ File\n#include <iostream>\n\nint main() {\n\tstd::cout << "New C++ File!" << std::endl;\n\treturn 0;\n}`,
-     rust: `// New Rust File\nfn main() {\n\tprintln!("New Rust File!");\n}`,
-     go: `// New Go File\npackage main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("New Go File!")\n}`,
-     php: `<?php\n// New PHP File\n\necho "New PHP File!";\n?>`,
-     json: `{\n\t"key": "value",\n\t"message": "New JSON file"\n}`,
-     plaintext: `New text file.`,
+     csharp: `using System;\n\npublic class Program\n{\n\tpublic static void Main(string[] args)\n\t{\n\t\tConsole.WriteLine("New C# File!");\n\t}\n}`,
+     java: `public class Main {\n\tpublic static void main(String[] args) {\n\t\tSystem.out.println("New Java File!");\n\t}\n}`,
+     cpp: `#include <iostream>\n\nint main() {\n\tstd::cout << "New C++ File!" << std::endl;\n\treturn 0;\n}`,
+     rust: `fn main() {\n\tprintln!("New Rust File!");\n}`,
+     go: `package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("New Go File!")\n}`,
+     php: `<?php\n\necho "New PHP File!";\n?>`,
+     json: `{\n\t"key": "value"\n}`,
+     plaintext: ``,
  };
+
 const externalSandboxLinks = {
     java: "https://www.jdoodle.com/online-java-compiler/",
     csharp: "https://dotnetfiddle.net/",
