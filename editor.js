@@ -67,7 +67,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!projectId) { handleMissingProject("No project selected."); return; }
         currentProject = getProjectFromStorage(projectId);
         if (!currentProject) { handleMissingProject("Failed to load project data."); return; }
-
         ensureProjectIntegrity();
         editorProjectNameH1.textContent = `RyxIDE - ${currentProject.name || 'Untitled'}`;
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
@@ -477,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function setupBaseEventListeners() {
-        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href ='index.html'; });
+        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'index.html'; });
         themeSelectorHeader.addEventListener('change', (e) => { currentSettings.theme = e.target.value; saveSettings(currentSettings); applySettings(); });
         shortcutsButton.addEventListener('click', editorActions.showShortcuts);
         tabBar.addEventListener('click', handleTabSwitch);
