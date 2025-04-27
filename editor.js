@@ -67,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!projectId) { handleMissingProject("No project selected."); return; }
         currentProject = getProjectFromStorage(projectId);
         if (!currentProject) { handleMissingProject("Failed to load project data."); return; }
+
         ensureProjectIntegrity();
         editorProjectNameH1.textContent = `RyxIDE - ${currentProject.name || 'Untitled'}`;
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
@@ -95,12 +96,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function postMonacoSetup() {
          currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
-         renderFileList();
+         fileManager.renderList();
          if (currentOpenFileId) {
-              openFile(currentOpenFileId, true);
+              fileManager.open(currentOpenFileId, true);
          } else {
               updateRunButtonState();
-              if (editor) editor.setValue("// Select or create a file from the left pane.");
+              if (editor) {
+                  editor.setValue("// Welcome to RyxIDE!\n// Select or create a file from the left pane to get started.");
+                  monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
+              }
          }
          loadAiChats();
          applySettings();
@@ -127,9 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js',
                     'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js'
                 };
+                const workerSrc = workerMap[label] || workerMap.editorWorkerService;
                 return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
                     self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' };
-                    importScripts('${workerMap[label] || workerMap.editorWorkerService}');`
+                    importScripts('${workerSrc}');`
                 )}`;
             }
         };
@@ -142,6 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
                      wordWrap: 'on',
                      contextmenu: true,
                      fontSize: 14,
+                     scrollbar: {
+                         verticalScrollbarSize: 10,
+                         horizontalScrollbarSize: 10
+                     },
                  });
                  editor.onDidChangeModelContent((e) => {
                      if (!e.isFlush && currentProject && currentOpenFileId) {
@@ -153,13 +162,13 @@ document.addEventListener('DOMContentLoaded', () => {
                  setupMonacoCompletions();
                  postMonacoSetup();
              } catch (error) {
-                 console.error("Failed to initialize Monaco Editor:", error);
-                 editorContainer.textContent = `Error initializing code editor: ${error.message}. Please try reloading.`;
+                 console.error("Fatal: Failed to initialize Monaco Editor instance:", error);
+                 editorContainer.textContent = `Error initializing code editor: ${error.message}. Please try reloading the page or check the browser console.`;
                  disableEditorFeatures();
              }
         }, function(error) {
-             console.error("Failed to load Monaco Editor:", error);
-             editorContainer.textContent = `Failed to load code editor library. Check network connection and browser console. ${error}`;
+             console.error("Fatal: Failed to load Monaco Editor modules:", error);
+             editorContainer.textContent = `Failed to load code editor library. Please check your internet connection and browser console. Error: ${error}`;
              disableEditorFeatures();
         });
     }
@@ -167,9 +176,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function disableEditorFeatures(){
          saveProjectButton.disabled = true;
          runButton.disabled = true;
+         runExternalButton.style.display = 'none';
          findButton.disabled = true;
          replaceButton.disabled = true;
          gotoLineButton.disabled = true;
+         gotoLineInput.disabled = true;
          renameFileButton.disabled = true;
          deleteFileButton.disabled = true;
          aiSendButton.disabled = true;
@@ -178,17 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setupEditorKeybindings() {
          if (!editor) return;
-         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible');
+         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible');
          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run());
          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run());
     }
 
     function setupMonacoCompletions() {
-         if (!window.monaco) return;
+         if (!window.monaco) { return; }
          monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true });
-         monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'clog', documentation: 'Console log', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'console.log($1);', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'fun', documentation: 'Define function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'forloop', documentation: 'For Loop', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'timeout', documentation: 'setTimeout function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'fprint', documentation: 'Formatted print', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'print(f"$1")', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'def', documentation: 'Define function with docstring', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'class', documentation: 'Define class with init', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'html5', documentation: 'HTML5 Boilerplate', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'div', documentation: 'Div with class', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'canvas', documentation: 'HTML5 Canvas', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
+         monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'clog', detail: 'console.log()', documentation: 'Log a message to the console', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'console.log($1);', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'fun', detail: 'function', documentation: 'Define a function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'forloop', detail:'for loop', documentation: 'Standard for loop', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'timeout', detail: 'setTimeout', documentation: 'setTimeout function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
+         monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', documentation: 'Formatted print statement', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'print(f"$1")', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'def', detail:'def function', documentation: 'Define function with docstring', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'class', detail:'class definition', documentation: 'Define class with __init__', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
+         monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', documentation: 'Basic HTML5 structure', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'div', detail:'<div> element', documentation: 'Div with class attribute', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'canvas', detail:'<canvas> element', documentation: 'HTML5 Canvas element', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
     }
 
     function setEditorDirty(isDirty) {
@@ -197,23 +208,35 @@ document.addEventListener('DOMContentLoaded', () => {
         editorDirty = isDirty;
         saveProjectButton.disabled = !isDirty;
         statusIndicator.textContent = isDirty ? '* Unsaved Changes' : '';
-        statusIndicator.className = isDirty ? 'status-warning' : '';
+        statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
         document.title = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`;
     }
 
     function updateStatus(message, type = 'info', duration = 3000) {
          statusIndicator.textContent = message;
-         statusIndicator.className = `status-${type}`;
+         statusIndicator.className = `status-indicator status-${type}`;
          if (duration > 0) {
-            setTimeout(() => { if (!editorDirty && statusIndicator.textContent === message) { statusIndicator.textContent = ''; statusIndicator.className = ''; } }, duration);
+            setTimeout(() => {
+                if (!editorDirty && statusIndicator.textContent === message) {
+                    statusIndicator.textContent = '';
+                    statusIndicator.className = 'status-indicator';
+                }
+            }, duration);
          }
     }
 
     function handleSaveProject() {
-        if (!currentProject || !editor) return;
+        if (!currentProject || !editor) {
+            return;
+        }
         if (currentOpenFileId) {
             const file = currentProject.files.find(f => f.id === currentOpenFileId);
-            if (file) file.content = editor.getValue();
+            if (file) {
+                file.content = editor.getValue();
+            } else {
+                 updateStatus('Error: Open file data missing!', 'error', 5000);
+                 return;
+            }
         }
         if(saveProjectToStorage(currentProject)) {
             setEditorDirty(false);
@@ -233,8 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderList: () => {
             if (!currentProject) return;
             fileListUl.innerHTML = '';
-            currentProject.files.sort((a,b) => a.name.localeCompare(b.name)).forEach(file => {
-                const icon = createDOMElement('i', { className: `file-icon ${fileManager.getIconClass(file.name)}` });
+            currentProject.files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
+                const iconClass = fileManager.getIconClass(file.name);
+                const icon = createDOMElement('i', { className: `file-icon ${iconClass}` });
                 const nameSpan = createDOMElement('span', { textContent: file.name });
                 const li = createDOMElement('li', { dataset: { fileId: file.id }, title: file.name, children: [icon, nameSpan] });
                 if (file.id === currentOpenFileId) li.classList.add('active');
@@ -254,7 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
              if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return;
              const file = currentProject.files.find(f => f.id === fileId);
              if (!file) {
-                  console.error(`File ${fileId} not found`); editor.setValue(`// Error: File not found (ID: ${fileId})`); monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
+                  editor.setValue(`// Error: File not found (ID: ${fileId})`);
+                  if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
                   currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return;
              }
              currentOpenFileId = file.id; currentProject.openFileId = file.id;
@@ -276,55 +301,30 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         handleRename: (fileIdToRename = null) => {
             const fileId = fileIdToRename || currentOpenFileId; if (!currentProject || !fileId) return;
-            const file = currentProject.files.find(f => f.id === fileId); if (!file) { console.error("File to rename not found:", fileId); return; }
+            const file = currentProject.files.find(f => f.id === fileId); if (!file) { return; }
             newFileNameInput.value = file.name; renameFileModal.dataset.fileId = fileId; showModal(modalBackdrop, renameFileModal);
         },
         confirmRename: () => {
-             const fileId = renameFileModal.dataset.fileId;
-             const newName = newFileNameInput.value.trim();
-             if (!fileId || !newName || !currentProject) { alert("Invalid input for renaming."); return; }
-             const file = currentProject.files.find(f => f.id === fileId);
-             if (!file) { alert("File not found. Cannot rename."); hideModal(modalBackdrop, renameFileModal); return; }
+             const fileId = renameFileModal.dataset.fileId; const newName = newFileNameInput.value.trim(); if (!fileId || !newName || !currentProject) { alert("Invalid input."); return; }
+             const file = currentProject.files.find(f => f.id === fileId); if (!file) { alert("File not found."); hideModal(modalBackdrop, renameFileModal); return; }
              if (newName === file.name) { hideModal(modalBackdrop, renameFileModal); return; }
-             if (currentProject.files.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.id !== fileId)) {
-                 alert(`Another file named "${newName}" already exists.`);
-                 newFileNameInput.focus(); return;
-             }
-
-             const oldName = file.name;
-             const oldLanguage = file.language;
-             file.name = newName;
-             file.language = getLanguageFromFilename(newName);
-
+             if (currentProject.files.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.id !== fileId)) { alert(`Name "${newName}" exists.`); newFileNameInput.focus(); return; }
+             const oldName = file.name; file.name = newName; file.language = getLanguageFromFilename(newName);
              if(saveProjectToStorage(currentProject)) {
-                 setEditorDirty(true);
-                 fileManager.renderList();
+                 setEditorDirty(true); fileManager.renderList();
                  if (currentOpenFileId === fileId && editor) {
                      const currentModelInstance = editor.getModel();
                      const oldUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${oldName}`);
-
                      if (currentModelInstance && currentModelInstance.uri.toString() === oldUri.toString()) {
                          const newUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${newName}`);
-                         const currentContent = currentModelInstance.getValue();
-                         const currentViewState = editor.saveViewState();
-
+                         const currentContent = currentModelInstance.getValue(); const currentViewState = editor.saveViewState();
                          const newModel = monaco.editor.createModel(currentContent, file.language, newUri);
-
                          editor.setModel(newModel);
-
-                         if (currentViewState) {
-                             editor.restoreViewState(currentViewState);
-                         }
+                         if (currentViewState) editor.restoreViewState(currentViewState);
                          editor.focus();
-
                          currentModelInstance.dispose();
-                         console.log(`Replaced and disposed model for renamed file: ${oldName} -> ${newName}`);
-                     } else {
-                         console.warn("Active model URI didn't match old URI during rename. Reopening file.");
-                         fileManager.open(fileId, true);
-                     }
+                     } else { fileManager.open(fileId, true); }
                  }
-
                  hideModal(modalBackdrop, renameFileModal);
              }
         },
@@ -357,17 +357,18 @@ document.addEventListener('DOMContentLoaded', () => {
         loadChats: () => {
              if (!currentProject?.aiChats) return; aiChatSelector.innerHTML = '';
              currentProject.aiChats.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-             currentProject.aiChats.forEach(chat => { const option = createDOMElement('option', { value: chat.id, textContent: chat.name || `Chat ${formatDate(chat.createdAt)}` }); if (chat.id === currentProject.currentAiChatId) option.selected = true; aiChatSelector.appendChild(option); });
+             currentProject.aiChats.forEach(chat => { const option = createDOMElement('option', { value: chat.id, textContent: chat.name || `Chat ${formatDate(chat.createdAt) || chat.id.substring(0,4)}` }); if (chat.id === currentProject.currentAiChatId) option.selected = true; aiChatSelector.appendChild(option); });
              aiChatManager.switchChat(currentProject.currentAiChatId);
+             aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1;
         },
         switchChat: (chatId) => {
              if (!currentProject?.aiChats) return; const chat = currentProject.aiChats.find(c => c.id === chatId);
-             if (chat) { currentAiChat = chat; currentProject.currentAiChatId = chatId; aiChatManager.renderMessages(); aiChatSelector.value = chatId; aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; }
-             else { if(currentProject.aiChats.length > 0) aiChatManager.switchChat(currentProject.aiChats[0].id); else { currentAiChat = null; aiChatMessages.innerHTML = '<p class="empty-chat">No chats available.</p>'; } }
+             if (chat) { currentAiChat = chat; currentProject.currentAiChatId = chatId; aiChatManager.renderMessages(); if (aiChatSelector.value !== chatId) aiChatSelector.value = chatId; aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; }
+             else { if(currentProject.aiChats.length > 0) aiChatManager.switchChat(currentProject.aiChats[0].id); else { currentAiChat = null; aiChatMessages.innerHTML = '<p class="empty-chat">No chats.</p>'; aiDeleteChatButton.disabled = true; } }
         },
         renderMessages: () => {
              aiChatMessages.innerHTML = '';
-             if (!currentAiChat?.messages?.length) { aiChatMessages.innerHTML = '<p class="empty-chat">Ask the AI something!</p>'; return; }
+             if (!currentAiChat?.messages?.length) { aiChatMessages.innerHTML = '<p class="empty-chat">Ask AI...</p>'; return; }
              currentAiChat.messages.forEach(msg => aiChatManager.appendMessage(msg.role, msg.parts, msg.previewData));
              aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
         },
@@ -375,33 +376,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const avatar = createDOMElement('span', { className: 'ai-avatar', innerHTML: role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>' });
             const contentDiv = createDOMElement('div', { className: 'ai-message-content' });
             const messageDiv = createDOMElement('div', { className: `ai-message role-${role}`, children: [avatar, contentDiv] });
+            const messageText = Array.isArray(parts) ? parts.map(p => p.text || '').join('') : (parts || '');
             if (role === 'model' && typeof marked !== 'undefined') {
                 try {
-                    const rawHtml = marked.parse(parts || '', { breaks: true, gfm: true });
-                    contentDiv.innerHTML = rawHtml.replace(/<pre><code(?: class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g, (match, lang, code) => {
-                        const safeLang = escapeHtml(lang || 'code'); const copyId = `copy-${generateUUID()}`;
-                        const header = createDOMElement('div', { className: 'code-block-header', children: [
-                            createDOMElement('span', { textContent: safeLang }),
-                            createDOMElement('div', { children: [
-                                 createDOMElement('button', { className: 'code-action-button copy-code-btn', dataset:{copyTarget: `#${copyId}`}, title: 'Copy Code', innerHTML: '<i class="fas fa-copy"></i>'}),
-                                 previewData ? createDOMElement('button', { className: 'code-action-button apply-code-btn', dataset: { fileId: previewData.fileId, codeContent: code }, title: `Apply to ${escapeHtml(previewData.fileName)}`, innerHTML: '<i class="fas fa-paste"></i> Apply'}) : null
-                            ]})
-                        ]});
-                        const codeElement = createDOMElement('code', { id: copyId, className: lang ? `language-${lang}` : '', textContent: code });
-                        const preElement = createDOMElement('pre', { children: [codeElement] });
-                        const wrapper = createDOMElement('div', { className: 'code-block-wrapper', children: [header, preElement] });
-                        return wrapper.outerHTML;
-                     });
-                 } catch (e) { console.error("Markdown parsing error:", e); contentDiv.textContent = parts; }
-            } else { contentDiv.textContent = Array.isArray(parts) ? parts.map(p => p.text || '').join('') : (parts || ''); }
+                    const rawHtml = marked.parse(messageText, { breaks: true, gfm: true, mangle: false, headerIds: false });
+                    const tempDiv = document.createElement('div'); tempDiv.innerHTML = rawHtml;
+                    tempDiv.querySelectorAll('pre > code').forEach((codeElement) => {
+                        const preElement = codeElement.parentElement; const lang = codeElement.className.replace('language-', '') || 'code'; const code = codeElement.textContent || ''; const copyId = `copy-${generateUUID()}`; codeElement.id = copyId;
+                        const header = createDOMElement('div', { className: 'code-block-header', children: [ createDOMElement('span', { textContent: escapeHtml(lang) }), createDOMElement('div', { children: [ createDOMElement('button', { className: 'code-action-button copy-code-btn', dataset:{copyTarget: `#${copyId}`}, title: 'Copy Code', innerHTML: '<i class="fas fa-copy"></i>'}), previewData ? createDOMElement('button', { className: 'code-action-button apply-code-btn', dataset: { fileId: previewData.fileId, codeContent: code }, title: `Apply to ${escapeHtml(previewData.fileName)}`, innerHTML: '<i class="fas fa-paste"></i> Apply'}) : null ]}) ]});
+                        const wrapper = createDOMElement('div', { className: 'code-block-wrapper' }); preElement.parentNode?.insertBefore(wrapper, preElement); wrapper.appendChild(header); wrapper.appendChild(preElement);
+                    });
+                    contentDiv.innerHTML = ''; while (tempDiv.firstChild) contentDiv.appendChild(tempDiv.firstChild);
+                 } catch (e) { contentDiv.textContent = messageText; }
+            } else { contentDiv.textContent = messageText; }
             aiChatMessages.appendChild(messageDiv); aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
         },
          handleSendMessage: async () => {
               const messageText = aiChatInput.value.trim(); if (!messageText || currentAiApiCall) return;
               const apiKey = getApiKey(); if (!apiKey) { alert("Set Gemini API Key in Settings."); aiChatInput.focus(); return; }
-              if (!currentAiChat) { console.error("No active AI chat!"); return; }
-              let contextPrompt = `You are RyxIDE AI. Project: ${currentProject.name || 'Unnamed'}. `; const file = currentOpenFileId ? currentProject.files.find(f=>f.id===currentOpenFileId):null; let currentFileData = null;
-              if(file){ currentFileData = file; contextPrompt += `File: ${file.name} (${file.language}). `; const sel = editor?.getSelection(); const selTxt = sel && !sel.isEmpty() ? editor.getModel().getValueInRange(sel) : null; if(selTxt){ contextPrompt+=`Selected:\n\`\`\`${file.language||''}\n${selTxt}\n\`\`\`\n`; } else { const content = editor?.getValue() ?? file.content ?? ''; if(content.length < 4000) contextPrompt+=`Content:\n\`\`\`${file.language||''}\n${content}\n\`\`\`\n`; else contextPrompt+=`(File content large). `; }}
+              if (!currentAiChat) { return; }
+              let contextPrompt = `You are RyxIDE AI. Project: ${currentProject.name || 'Unnamed'}. `; const file = currentOpenFileId && editor ? currentProject.files.find(f=>f.id===currentOpenFileId):null; let currentFileData = null;
+              if(file){ currentFileData = file; contextPrompt += `File: ${file.name} (${file.language}). `; const model = editor.getModel(); const sel = editor.getSelection(); const selTxt = sel && !sel.isEmpty() && model ? model.getValueInRange(sel) : null; if(selTxt){ contextPrompt+=`Selected:\n\`\`\`${file.language||''}\n${selTxt}\n\`\`\`\n`; } else { const content = model?.getValue() ?? file.content ?? ''; if(content.length < 4000) contextPrompt+=`Content:\n\`\`\`${file.language||''}\n${content}\n\`\`\`\n`; else contextPrompt+=`(File content large). `; }}
               const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', '); if (otherFiles) contextPrompt += `Other files: ${otherFiles}.\n`; contextPrompt += `\nUser Query: ${messageText}`;
               const userMsg = { role: 'user', parts: messageText }; currentAiChat.messages.push(userMsg); aiChatManager.appendMessage(userMsg.role, userMsg.parts); aiChatInput.value = ''; aiSendButton.disabled = true; currentAiApiCall = true; aiChatInput.disabled = true;
               aiChatMessages.querySelector('.thinking')?.remove(); aiChatManager.appendMessage('model', 'Thinking...'); aiChatMessages.lastChild?.classList.add('thinking');
@@ -412,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
               aiSendButton.disabled = false; currentAiApiCall = false; aiChatInput.disabled = false; aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
          },
         handleNewChat: () => {
-            if (!currentProject) return; const newChatId = generateUUID(); const newChatName = `Chat ${currentProject.aiChats.length + 1}`;
+            if (!currentProject) return; const newChatId = generateUUID(); const newChatName = `Chat ${formatDate(Date.now()) || (currentProject.aiChats.length + 1)}`;
             const newChat = { id: newChatId, name: newChatName, messages: [], createdAt: Date.now() };
             currentProject.aiChats.push(newChat); currentProject.currentAiChatId = newChatId;
             if(saveProjectToStorage(currentProject)) aiChatManager.loadChats();
@@ -428,8 +423,8 @@ document.addEventListener('DOMContentLoaded', () => {
         handleCodeAction: (event) => {
              const button = event.target.closest('.code-action-button'); if (!button) return;
              if (button.classList.contains('copy-code-btn')) {
-                  const targetSelector = button.dataset.copyTarget; const codeElement = document.querySelector(targetSelector);
-                  if (codeElement) { navigator.clipboard.writeText(codeElement.textContent).then(() => { button.innerHTML = '<i class="fas fa-check"></i>'; updateStatus('Copied!', 'success', 1500); setTimeout(() => { button.innerHTML = '<i class="fas fa-copy"></i>'; }, 1500); }).catch(err => { console.error('Copy failed:', err); updateStatus('Copy failed', 'error'); }); }
+                  const targetSelector = button.dataset.copyTarget; const codeElement = aiChatMessages.querySelector(targetSelector);
+                  if (codeElement) { navigator.clipboard.writeText(codeElement.textContent).then(() => { button.innerHTML = '<i class="fas fa-check"></i>'; updateStatus('Copied!', 'success', 1500); setTimeout(() => { button.innerHTML = '<i class="fas fa-copy"></i>'; }, 1500); }).catch(err => { updateStatus('Copy failed', 'error'); }); }
              } else if (button.classList.contains('apply-code-btn')) {
                    const fileId = button.dataset.fileId; const newContent = button.dataset.codeContent; const file = currentProject?.files.find(f => f.id === fileId);
                    if (file && newContent !== undefined) { aiApplyAction = { fileId, newContent }; aiApplyFilename.textContent = file.name; aiApplyCodePreview.textContent = newContent.substring(0, 500) + (newContent.length > 500 ? '\n... (truncated)' : ''); showModal(modalBackdrop, aiApplyModal); }
@@ -439,16 +434,16 @@ document.addEventListener('DOMContentLoaded', () => {
          confirmApplyCode: () => {
               if (!aiApplyAction || !editor || !currentProject) { alert("Cannot apply changes."); hideModal(modalBackdrop, aiApplyModal); return; }
               const { fileId, newContent } = aiApplyAction; const targetFile = currentProject.files.find(f => f.id === fileId); if (!targetFile) { alert(`Target file not found.`); hideModal(modalBackdrop, aiApplyModal); return; }
-              if (currentOpenFileId === fileId) { const model = editor.getModel(); if (model) { const fullRange = model.getFullModelRange(); editor.executeEdits('ai-apply', [{ range: fullRange, text: newContent, forceMoveMarkers: true }]); targetFile.content = newContent; setEditorDirty(true); updateStatus(`AI applied to ${targetFile.name}.`, 'success'); } else { alert("Error: Editor model not found for open file."); } }
-              else { targetFile.content = newContent; if(saveProjectToStorage(currentProject)) updateStatus(`AI applied & saved to ${targetFile.name}.`, 'success'); else updateStatus(`Applied changes to ${targetFile.name}, but save failed!`, 'error'); }
+              if (currentOpenFileId === fileId) { const model = editor.getModel(); if (model) { const fullRange = model.getFullModelRange(); editor.executeEdits('ai-apply', [{ range: fullRange, text: newContent, forceMoveMarkers: true }]); setEditorDirty(true); updateStatus(`AI applied to editor for ${targetFile.name}.`, 'success'); } else { alert("Error: Editor model not found."); } }
+              else { targetFile.content = newContent; if(saveProjectToStorage(currentProject)) updateStatus(`AI applied & saved to ${targetFile.name}.`, 'success'); else updateStatus(`Applied to ${targetFile.name}, but save failed!`, 'error'); }
               hideModal(modalBackdrop, aiApplyModal); aiApplyAction = null;
          }
     };
 
     const runtimeManager = {
-        loadPyodideIfNeeded: async () => { if (isPyodideReady) return true; if (isPyodideLoading) { await new Promise(r => setTimeout(r,100)); return runtimeManager.loadPyodideIfNeeded();} isPyodideLoading = true; showLoader(loaderOverlay, loaderText, "Loading Python Runtime (Pyodide)..."); updateCredits(); try { pyodide = await window.loadPyodide(); await pyodide.loadPackage(['micropip']); console.log('Pyodide loaded successfully'); isPyodideReady = true; return true; } catch (error) { console.error('Failed to load Pyodide:', error); outputConsole.textContent = `Error loading Python environment: ${error?.message || error}\nPyodide may be blocked or failed to download.`; isPyodideReady = false; return false; } finally { isPyodideLoading = false; hideLoader(loaderOverlay); } },
-        loadRubyVMIfNeeded: async () => { if (isRubyVMReady) return true; if (isRubyVMLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadRubyVMIfNeeded(); } if (!window.DefaultRubyVM) { outputConsole.textContent = "Error: Ruby WASM module failed to load initially. Cannot run Ruby."; return false; } isRubyVMLoading = true; showLoader(loaderOverlay, loaderText, "Loading Ruby VM (Experimental)..."); updateCredits(); try { const rubyModule = await window.DefaultRubyVM(); rubyVM = new rubyModule.RubyVM(); let stderr = ""; const printOutput = (level, msg) => { const prefix = level === 'error' ? 'Ruby Error: ' : ''; outputConsole.textContent += prefix + msg + '\n'; if(level === 'error') stderr += msg + '\n'; }; rubyVM.printSync = (level, msg) => printOutput(level, msg); rubyVM.printlnSync = (level, msg) => printOutput(level, msg); await rubyVM.init(); console.log('Ruby VM initialized successfully'); isRubyVMReady = true; return true; } catch (error) { console.error('Failed to load/init Ruby VM:', error); outputConsole.textContent = `Error loading Ruby environment: ${error?.message || error}\nRuby WASM is experimental and may fail.`; rubyVM = null; isRubyVMReady = false; return false; } finally { isRubyVMLoading = false; hideLoader(loaderOverlay); } },
-        loadDotnetRuntimeIfNeeded: async () => { if (isDotnetRuntimeReady) return true; if (isDotnetRuntimeLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadDotnetRuntimeIfNeeded(); } if (typeof dotnet === 'undefined' || typeof dotnet.create !== 'function') { outputConsole.textContent = "Error: .NET WASM runtime script not loaded or invalid.\n(Requires a proper .NET SDK build output)."; return false; } isDotnetRuntimeLoading = true; showLoader(loaderOverlay, loaderText, "Loading .NET Runtime (Large Experimental!)..."); updateCredits(); try { const { getAssemblyExports } = await dotnet.create(); dotnetRuntimeExports = { compileAndRunAsync: async (csharpCode) => { console.warn("Simulating C# compilation and execution in WASM."); outputConsole.textContent += "--- Simulating C# Execution ---\n"; await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1500)); const fakeConsole = []; const fakeError = []; if (csharpCode.includes("Console.WriteLine(\"Hello RyxIDE!\");")) fakeConsole.push("Hello RyxIDE!"); if (csharpCode.includes("invalid syntax")) fakeError.push("Simulated Compilation Error: Invalid syntax."); if (csharpCode.includes("throw new Exception")) fakeError.push("Simulated Runtime Exception."); const success = fakeError.length === 0; if(!success) fakeConsole.push("Execution failed."); else fakeConsole.push("Simulated execution finished."); return { success, errors: fakeError, output: fakeConsole }; } }; console.log('.NET WASM Runtime Initialized (Simulated).'); isDotnetRuntimeReady = true; return true; } catch (error) { console.error('.NET WASM Runtime Load Error:', error); outputConsole.textContent = `Error loading .NET environment: ${error.message}\nCheck console. This is highly experimental.`; dotnetRuntimeExports = null; isDotnetRuntimeReady = false; return false; } finally { isDotnetRuntimeLoading = false; hideLoader(loaderOverlay); } },
+        loadPyodideIfNeeded: async () => { if (isPyodideReady) return true; if (isPyodideLoading) { await new Promise(r => setTimeout(r,100)); return runtimeManager.loadPyodideIfNeeded();} isPyodideLoading = true; showLoader(loaderOverlay, loaderText, "Loading Python..."); updateCredits(); try { pyodide = await window.loadPyodide(); await pyodide.loadPackage(['micropip']); console.log('Pyodide loaded.'); isPyodideReady = true; return true; } catch (e) { console.error('Pyodide Load Error:', e); outputConsole.textContent = `Error loading Python: ${e?.message||e}`; isPyodideReady=false; return false; } finally { isPyodideLoading = false; hideLoader(loaderOverlay); } },
+        loadRubyVMIfNeeded: async () => { if (isRubyVMReady) return true; if (isRubyVMLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadRubyVMIfNeeded(); } if (!window.DefaultRubyVM) { outputConsole.textContent = "Error: Ruby WASM module failed."; return false; } isRubyVMLoading = true; showLoader(loaderOverlay, loaderText, "Loading Ruby VM..."); updateCredits(); try { const m = await window.DefaultRubyVM(); rubyVM = new m.RubyVM(); const printOutput=(l,msg)=>{outputConsole.textContent+=(l==='error'?'Ruby Error: ':'')+msg+'\n';}; rubyVM.printSync=printOutput; rubyVM.printlnSync=printOutput; await rubyVM.init(); console.log('Ruby VM initialized.'); isRubyVMReady = true; return true; } catch (e) { console.error('Ruby Load Error:', e); outputConsole.textContent = `Error loading Ruby: ${e?.message||e}`; rubyVM=null; isRubyVMReady=false; return false; } finally { isRubyVMLoading = false; hideLoader(loaderOverlay); } },
+        loadDotnetRuntimeIfNeeded: async () => { if (isDotnetRuntimeReady) return true; if (isDotnetRuntimeLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadDotnetRuntimeIfNeeded(); } if (typeof dotnet === 'undefined' || typeof dotnet.create !== 'function') { outputConsole.textContent = "Error: .NET WASM runtime script not found."; return false; } isDotnetRuntimeLoading = true; showLoader(loaderOverlay, loaderText, "Loading .NET Runtime (Exp)..."); updateCredits(); try { const { getAssemblyExports } = await dotnet.create(); dotnetRuntimeExports = { compileAndRunAsync: async (c) => { outputConsole.textContent += "-- Simulating C# Run --\n"; await new Promise(r=>setTimeout(r,1500)); const o=[], e=[]; if(c.includes("Hello"))o.push("Hello RyxIDE!"); if(c.includes("error"))e.push("Simulated Error."); return { success:e.length===0, errors:e, output:o }; } }; console.log('.NET Runtime Initialized (Simulated).'); isDotnetRuntimeReady = true; return true; } catch (e) { console.error('.NET Load Error:', e); outputConsole.textContent = `Error loading .NET: ${e.message}`; dotnetRuntimeExports=null; isDotnetRuntimeReady=false; return false; } finally { isDotnetRuntimeLoading = false; hideLoader(loaderOverlay); } },
         runCode: () => {
             if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return;
             const code = editor.getValue(); outputConsole.textContent = ''; previewFrame.srcdoc = '';
@@ -466,13 +461,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 default: outputConsole.textContent = `Run not configured for ${file.language}`; updateStatus(`Cannot run ${file.language}.`, 'info'); break;
             }
         },
-        runHtmlPreview: () => {
-            const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { outputConsole.textContent = "Current file is not HTML."; updateStatus('Preview failed', 'error'); return; } let htmlContent = editor.getValue() || htmlFile.content || ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; outputConsole.textContent = 'HTML preview rendered (basic CSS/JS inclusion).'; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); outputConsole.textContent = `Preview Error: ${e.message}`; updateStatus('Preview failed', 'error'); }
-        },
+        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { outputConsole.textContent = "Current file is not HTML."; updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; outputConsole.textContent = 'HTML preview rendered.'; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); outputConsole.textContent = `Preview Error: ${e.message}`; updateStatus('Preview failed', 'error'); } },
         runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>Heading</h1><p>Paragraph</p><button class="primary">Button</button></body></html>`; previewFrame.srcdoc = cssHtml; outputConsole.textContent = 'CSS preview.'; updateStatus('Preview Ready', 'success');},
-        runJavaScriptCode: (code) => {
-            outputConsole.textContent = 'Running JS...\n---\n'; updateStatus('Running JS...', 'info', 0); const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (!outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000);
-        },
+        runJavaScriptCode: (code) => { outputConsole.textContent = 'Running JS...\n---\n'; updateStatus('Running JS...', 'info', 0); const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (!outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
         runPythonCode: async (code) => { const ready = await runtimeManager.loadPyodideIfNeeded(); if(!ready) { updateStatus('Py Runtime Fail', 'error'); return; } outputConsole.textContent='Running Python...\n---\n'; updateStatus('Running Py...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running Python..."); try{ pyodide.setStdout({batched:(m)=>outputConsole.textContent+=m+'\n'}); pyodide.setStderr({batched:(m)=>outputConsole.textContent+=`PyError: ${m}\n`}); await pyodide.runPythonAsync(code); outputConsole.textContent+='\n--- Python Finished ---'; updateStatus('Py Finished', 'success');} catch(e){ console.error('Py error:', e); outputConsole.textContent+=`\n--- Py Error ---\n${e.message}`; updateStatus('Py Error', 'error');} finally { pyodide.setStdout({}); pyodide.setStderr({}); hideLoader(loaderOverlay); outputConsole.scrollTop=outputConsole.scrollHeight; }},
         runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; outputConsole.textContent='Markdown rendered.'; updateStatus('MD Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
         runRubyCode: async (code) => { const ready = await runtimeManager.loadRubyVMIfNeeded(); if(!ready || !rubyVM) { updateStatus('Ruby Runtime Fail', 'error'); return; } outputConsole.textContent='Running Ruby (Exp)...\n---\n'; updateStatus('Running Ruby...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running Ruby..."); try { await rubyVM.evalAsync(code); outputConsole.textContent+='\n--- Ruby Finished ---'; updateStatus('Ruby Finished', 'success'); } catch(e){ console.error('Ruby error:', e); outputConsole.textContent+=`\n--- Ruby Error ---\n${e?.message||e}`; updateStatus('Ruby Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop=outputConsole.scrollHeight; }},
@@ -482,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorActions = {
         find: () => { if (editor) editor.getAction('actions.find').run(); },
         replace: () => { if (editor) editor.getAction('editor.action.startFindReplaceAction').run(); },
-        gotoLine: () => { if (editor) { const l = parseInt(gotoLineInput.value, 10); if (!isNaN(l) && l > 0) { try { editor.revealLineInCenterIfOutsideViewport(l, 0); editor.setPosition({ lineNumber: l, column: 1 }); editor.focus(); } catch (e) { updateStatus(`Invalid line: ${l}`, 'warning');}} else if (gotoLineInput.value !== '') updateStatus('Invalid line.', 'warning'); gotoLineInput.value = ''; }},
+        gotoLine: () => { if (!editor) return; const line = parseInt(gotoLineInput.value, 10); if (!isNaN(line) && line > 0) { try { const maxLine = editor.getModel()?.getLineCount() || 1; const targetLine = Math.max(1, Math.min(line, maxLine)); editor.revealLineInCenterIfOutsideViewport(targetLine, 0); editor.setPosition({ lineNumber: targetLine, column: 1 }); editor.focus(); } catch (e) { updateStatus(`Invalid line: ${line}`, 'warning');}} else if (gotoLineInput.value !== '') updateStatus('Invalid line.', 'warning'); gotoLineInput.value = ''; },
         showShortcuts: () => { showModal(modalBackdrop, shortcutsModal); }
     };
 
@@ -504,17 +495,14 @@ document.addEventListener('DOMContentLoaded', () => {
         createFileConfirmButton.addEventListener('click', fileManager.confirmNew);
         renameFileCancelButton.addEventListener('click', () => hideModal(modalBackdrop, renameFileModal));
         renameFileConfirmButton.addEventListener('click', fileManager.confirmRename);
-        aiApplyCancelButton.addEventListener('click', () => hideModal(modalBackdrop, aiApplyModal));
+        aiApplyCancelButton.addEventListener('click', () => { hideModal(modalBackdrop, aiApplyModal); aiApplyAction = null; });
         aiApplyConfirmButton.addEventListener('click', aiChatManager.confirmApplyCode);
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
     }
 
     function setupEditorSpecificEventListeners() {
-        if(!editor) {
-            console.error("Cannot setup editor specific listeners: Editor not initialized.");
-            return;
-        }
+        if(!editor) { return; }
         saveProjectButton.addEventListener('click', handleSaveProject);
         findButton.addEventListener('click', editorActions.find);
         replaceButton.addEventListener('click', editorActions.replace);
@@ -540,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
          const file = currentProject?.files.find(f => f.id === currentOpenFileId);
          const lang = file?.language || 'plaintext';
          const runnableInternal = ['html', 'css', 'javascript', 'python', 'markdown', 'ruby', 'csharp'].includes(lang);
-         const runnableExternalKey = lang === 'java' ? 'java' : lang === 'cpp' ? 'cpp' : lang === 'c' ? 'c' : lang === 'rust' ? 'rust' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : null;
+         const runnableExternalKey = lang === 'java' ? 'java' : (lang === 'cpp' || lang === 'c') ? 'cpp' : lang === 'rust' ? 'rust' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : null;
          const externalLink = runnableExternalKey ? externalSandboxLinks[runnableExternalKey] : null;
          runButton.disabled = !runnableInternal;
          runButton.style.display = (runnableInternal || !externalLink) ? 'inline-flex' : 'none';
@@ -551,5 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
              runExternalButton.title = `Run ${lang} in External Sandbox`;
          }
     }
+
     initializeEditorPage();
 });
