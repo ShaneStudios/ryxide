@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                   monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
               }
          }
-         loadAiChats();
+         aiChatManager.loadChats();
          applySettings();
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
@@ -321,8 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
                          const newModel = monaco.editor.createModel(currentContent, file.language, newUri);
                          editor.setModel(newModel);
                          if (currentViewState) editor.restoreViewState(currentViewState);
-                         editor.focus();
-                         currentModelInstance.dispose();
+                         editor.focus(); currentModelInstance.dispose();
                      } else { fileManager.open(fileId, true); }
                  }
                  hideModal(modalBackdrop, renameFileModal);
@@ -478,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function setupBaseEventListeners() {
-        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'index.html'; });
+        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href ='index.html'; });
         themeSelectorHeader.addEventListener('change', (e) => { currentSettings.theme = e.target.value; saveSettings(currentSettings); applySettings(); });
         shortcutsButton.addEventListener('click', editorActions.showShortcuts);
         tabBar.addEventListener('click', handleTabSwitch);
