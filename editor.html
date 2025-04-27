@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RyxIDE - Editor</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.main.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app-container">
+        <div id="editor-view">
+             <header>
+                <h1 id="editor-project-name"><i class="fas fa-rocket"></i> RyxIDE</h1>
+                <div class="header-controls">
+                     <button id="back-to-dashboard-button" class="header-button" title="Back to Dashboard"><i class="fas fa-arrow-left"></i></button>
+                     <button id="save-project-button" class="header-button primary" title="Save Project (Ctrl+S)" disabled><i class="fas fa-save"></i> Save</button>
+                     <select id="theme-selector-header" class="header-select" title="Editor Theme">
+                         <option value="vs-dark">Dark</option>
+                         <option value="vs">Light</option>
+                     </select>
+                     <button id="find-button" class="header-button" title="Find (Ctrl+F)"><i class="fas fa-search"></i></button>
+                     <button id="replace-button" class="header-button" title="Replace (Ctrl+H)"><i class="fas fa-exchange-alt"></i></button>
+                     <div class="goto-line-container">
+                         <input type="number" id="goto-line-input" placeholder="Line#" min="1" title="Go to Line Number">
+                         <button id="goto-line-button" title="Go"><i class="fas fa-arrow-right"></i></button>
+                     </div>
+                     <button id="run-button" class="header-button primary" title="Run / Preview" disabled><i class="fas fa-play"></i> Run</button>
+                     <a id="run-external-button" class="header-button external-link" title="Run in External Sandbox" target="_blank" rel="noopener noreferrer" style="display: none;"><i class="fas fa-external-link-alt"></i> Run Externally</a>
+                     <button id="shortcuts-button" class="header-button" title="Keyboard Shortcuts"><i class="fas fa-keyboard"></i></button>
+                </div>
+            </header>
+            <main id="editor-main-content">
+                 <aside id="file-pane">
+                     <h4><i class="fas fa-folder-open"></i> Files</h4>
+                     <ul id="file-list">
+                     </ul>
+                     <div id="file-actions">
+                         <button id="rename-file-button" title="Rename Selected File" disabled><i class="fas fa-pencil-alt"></i></button>
+                         <button id="new-file-button" title="New File"><i class="fas fa-plus"></i></button>
+                         <button id="delete-file-button" title="Delete Selected File" disabled><i class="fas fa-trash"></i></button>
+                     </div>
+                 </aside>
+                 <section id="editor-tabs-area">
+                      <div class="tab-bar">
+                          <button class="tab-button active" data-tab="editor"><i class="fas fa-code"></i> Editor</button>
+                          <button class="tab-button" data-tab="ai-chat"><i class="fas fa-robot"></i> AI Chat</button>
+                      </div>
+                      <div class="tab-content active" id="editor-tab-content">
+                           <div id="editor-container">
+                           </div>
+                      </div>
+                      <div class="tab-content" id="ai-chat-tab-content">
+                           <div id="ai-chat-interface">
+                               <div class="ai-chat-controls">
+                                    <label for="ai-chat-selector" class="sr-only">Chat History:</label>
+                                    <select id="ai-chat-selector" title="Select Chat History"></select>
+                                    <button id="ai-new-chat-button" title="New Chat"><i class="fas fa-plus"></i></button>
+                                    <button id="ai-delete-chat-button" title="Delete Current Chat"><i class="fas fa-trash"></i></button>
+                                    <label for="ai-mode-selector" class="sr-only">AI Mode:</label>
+                                    <select id="ai-mode-selector" title="AI Interaction Mode">
+                                         <option value="generate">Generate Only</option>
+                                         <option value="modify">Modify Files (Preview)</option>
+                                    </select>
+                               </div>
+                               <div id="ai-chat-messages">
+                               </div>
+                               <div id="ai-chat-input-area">
+                                   <textarea id="ai-chat-input" placeholder="Ask AI about your code or programming questions... (Shift+Enter for newline)" rows="3"></textarea>
+                                   <button id="ai-send-button" title="Send Message (Enter)"><i class="fas fa-paper-plane"></i></button>
+                               </div>
+                           </div>
+                      </div>
+                 </section>
+                 <section id="side-pane">
+                     <div id="preview-pane">
+                         <iframe id="preview-frame" title="Preview Pane" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+                     </div>
+                     <div id="output-console-container">
+                         <h4><i class="fas fa-terminal"></i> Console / Output</h4>
+                         <pre id="output-console"></pre>
+                     </div>
+                 </section>
+            </main>
+             <footer>
+                 <p>RyxIDE by <a href="https://github.com/ShaneStudios/" target="_blank" rel="noopener noreferrer">Shane Studios</a>. <strong>STILL UNDER CONSTRUCTION</strong> <span id="status-indicator"></span></p>
+                 <p id="credits">Loading credits...</p>
+             </footer>
+        </div>
+    </div>
+     <div id="modal-backdrop" class="modal-hidden">
+         <div id="new-file-modal" class="modal-content modal-hidden">
+             <h2><i class="fas fa-file-alt"></i> Create New File</h2>
+             <label for="file-name-input">File Name:</label>
+             <input type="text" id="file-name-input" required placeholder="e.g., main.py, index.html">
+             <div class="modal-actions">
+                 <button id="create-file-cancel-button">Cancel</button>
+                 <button id="create-file-confirm-button" class="primary">Create</button>
+             </div>
+         </div>
+          <div id="rename-file-modal" class="modal-content modal-hidden">
+             <h2><i class="fas fa-pencil-alt"></i> Rename File</h2>
+             <label for="new-file-name-input">New File Name:</label>
+             <input type="text" id="new-file-name-input" required>
+             <div class="modal-actions">
+                 <button id="rename-file-cancel-button">Cancel</button>
+                 <button id="rename-file-confirm-button" class="primary">Rename</button>
+             </div>
+         </div>
+          <div id="ai-apply-modal" class="modal-content modal-hidden">
+              <h2><i class="fas fa-paste"></i> Apply AI Code Changes</h2>
+              <p>Apply generated code to file: <strong id="ai-apply-filename"></strong>?</p>
+              <label>Generated Code Preview:</label>
+              <pre id="ai-apply-code-preview"></pre>
+              <p class="warning"><i class="fas fa-exclamation-triangle"></i> This replaces the file content. Use Undo (Ctrl+Z) if needed after applying.</p>
+              <div class="modal-actions">
+                  <button id="ai-apply-cancel-button">Cancel</button>
+                  <button id="ai-apply-confirm-button" class="warning">Apply Changes</button>
+              </div>
+          </div>
+          <div id="shortcuts-modal" class="modal-content modal-hidden">
+               <h2><i class="fas fa-keyboard"></i> Keyboard Shortcuts</h2>
+               <ul>
+                   <li><code>Ctrl/Cmd + S</code> : Save Project</li>
+                   <li><code>Ctrl/Cmd + F</code> : Find</li>
+                   <li><code>Ctrl/Cmd + H</code> : Replace</li>
+                   <li><code>Ctrl/Cmd + Z</code> : Undo</li>
+                   <li><code>Ctrl/Cmd + Y</code> : Redo</li>
+                   <li><code>Tab</code> : Indent Selection / Insert Tab</li>
+                   <li><code>Shift + Tab</code> : Outdent Selection</li>
+                   <li><code>Alt + Up/Down</code> : Move Line Up/Down</li>
+                   <li><code>Shift + Alt + Up/Down</code> : Copy Line Up/Down</li>
+                   <li>(Many standard text editing shortcuts are supported by the editor)</li>
+               </ul>
+               <div class="modal-actions">
+                   <button id="shortcuts-close-button" class="primary">Close</button>
+               </div>
+          </div>
+     </div>
+    <div id="loader-overlay" class="modal-hidden">
+        <div id="loader-text">Loading...</div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/loader.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai@0.1.3/dist/index.min.js"></script>
+    <script type="module">
+        try {
+            const { DefaultRubyVM } = await import('https://cdn.jsdelivr.net/npm/ruby-head-wasm-wasi@2.1.0/dist/browser.esm.js');
+            window.DefaultRubyVM = DefaultRubyVM;
+            console.log("Ruby VM module loaded");
+        } catch (err) {
+            console.error("Failed to load Ruby VM module:", err);
+            window.DefaultRubyVM = null;
+        }
+    </script>
+    <script src="https://ryxide-placeholder.net/dotnet.runtime.js" defer></script>
+    <script src="common.js"></script>
+    <script src="editor.js"></script>
+</body>
+</html>
