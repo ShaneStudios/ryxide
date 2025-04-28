@@ -48,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiApplyCancelButton = document.getElementById('ai-apply-cancel-button');
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const shortcutsCloseButton = document.getElementById('shortcuts-close-button');
-
     let editor = null;
     let currentProject = null;
     let currentOpenFileId = null;
@@ -61,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let pyodide = null, isPyodideLoading = false, isPyodideReady = false;
     let rubyVM = null, isRubyVMLoading = false, isRubyVMReady = false;
     let isDotnetRuntimeLoading = false, isDotnetRuntimeReady = false, dotnetRuntimeExports = null;
-
     function initializeEditorPage() {
         const projectId = getCurrentProjectId();
         if (!projectId) { handleMissingProject("No project selected."); return; }
@@ -75,13 +73,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setupBaseEventListeners();
         setupMonaco();
     }
-
     function handleMissingProject(message) {
          alert(message + " Redirecting to dashboard.");
          setCurrentProjectId(null);
-         window.location.href = 'index.html';
+         window.location.href = 'dashboard.html';
     }
-
     function ensureProjectIntegrity() {
          if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
              const defaultChatId = generateUUID();
@@ -92,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
               currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null;
           }
     }
-
     function postMonacoSetup() {
          currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
          fileManager.renderList();
@@ -110,14 +105,12 @@ document.addEventListener('DOMContentLoaded', () => {
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
     }
-
      function applySettings() {
         if (editor) {
             monaco.editor.setTheme(currentSettings.theme);
         }
         themeSelectorHeader.value = currentSettings.theme;
     }
-
     function setupMonaco() {
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' }});
         window.MonacoEnvironment = {
@@ -162,37 +155,26 @@ document.addEventListener('DOMContentLoaded', () => {
                  postMonacoSetup();
              } catch (error) {
                  console.error("Fatal: Failed to initialize Monaco Editor instance:", error);
-                 editorContainer.textContent = `Error initializing code editor: ${error.message}. Please try reloading the page or check the browser console.`;
+                 editorContainer.textContent = `Error initializing code editor: ${error.message}. Reload or check console.`;
                  disableEditorFeatures();
              }
         }, function(error) {
              console.error("Fatal: Failed to load Monaco Editor modules:", error);
-             editorContainer.textContent = `Failed to load code editor library. Please check your internet connection and browser console. Error: ${error}`;
+             editorContainer.textContent = `Failed to load code editor library. Check connection/console. Error: ${error}`;
              disableEditorFeatures();
         });
     }
-
     function disableEditorFeatures(){
-         saveProjectButton.disabled = true;
-         runButton.disabled = true;
-         runExternalButton.style.display = 'none';
-         findButton.disabled = true;
-         replaceButton.disabled = true;
-         gotoLineButton.disabled = true;
-         gotoLineInput.disabled = true;
-         renameFileButton.disabled = true;
-         deleteFileButton.disabled = true;
-         aiSendButton.disabled = true;
-         aiChatInput.disabled = true;
+         saveProjectButton.disabled = true; runButton.disabled = true; runExternalButton.style.display = 'none'; findButton.disabled = true;
+         replaceButton.disabled = true; gotoLineButton.disabled = true; gotoLineInput.disabled = true; renameFileButton.disabled = true; deleteFileButton.disabled = true;
+         aiSendButton.disabled = true; aiChatInput.disabled = true;
     }
-
     function setupEditorKeybindings() {
          if (!editor) return;
          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible');
          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run());
          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run());
     }
-
     function setupMonacoCompletions() {
          if (!window.monaco) { return; }
          monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true });
@@ -200,7 +182,6 @@ document.addEventListener('DOMContentLoaded', () => {
          monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', documentation: 'Formatted print statement', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'print(f"$1")', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'def', detail:'def function', documentation: 'Define function with docstring', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'class', detail:'class definition', documentation: 'Define class with __init__', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
          monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', documentation: 'Basic HTML5 structure', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'div', detail:'<div> element', documentation: 'Div with class attribute', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'canvas', detail:'<canvas> element', documentation: 'HTML5 Canvas element', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
     }
-
     function setEditorDirty(isDirty) {
         if (!currentOpenFileId && isDirty) isDirty = false;
         if (editorDirty === isDirty) return;
@@ -210,7 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
         statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
         document.title = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`;
     }
-
     function updateStatus(message, type = 'info', duration = 3000) {
          statusIndicator.textContent = message;
          statusIndicator.className = `status-indicator status-${type}`;
@@ -223,7 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }, duration);
          }
     }
-
     function handleSaveProject() {
         if (!currentProject || !editor) {
             return;
@@ -244,13 +223,11 @@ document.addEventListener('DOMContentLoaded', () => {
              updateStatus('Error Saving Project!', 'error', 5000);
         }
     }
-
     function handleAutoSave() {
         if (!currentSettings.autoSave || !editorDirty) return;
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = setTimeout(handleSaveProject, 1500);
     }
-
     const fileManager = {
         renderList: () => {
             if (!currentProject) return;
@@ -341,7 +318,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-
     function handleTabSwitch(event) {
          const button = event.target.closest('.tab-button'); if (!button) return;
          const tabName = button.dataset.tab;
@@ -350,7 +326,6 @@ document.addEventListener('DOMContentLoaded', () => {
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
          else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
-
     const aiChatManager = {
         loadChats: () => {
              if (!currentProject?.aiChats) return; aiChatSelector.innerHTML = '';
@@ -393,15 +368,36 @@ document.addEventListener('DOMContentLoaded', () => {
               const messageText = aiChatInput.value.trim(); if (!messageText || currentAiApiCall) return;
               const apiKey = getApiKey(); if (!apiKey) { alert("Set Gemini API Key in Settings."); aiChatInput.focus(); return; }
               if (!currentAiChat) { return; }
-              let contextPrompt = `You are RyxIDE AI. You will act and be as nice as needed, including greetings and sympathy, so on and so forth. You are in: Project: ${currentProject.name || 'Unnamed'}. `; const file = currentOpenFileId && editor ? currentProject.files.find(f=>f.id===currentOpenFileId):null; let currentFileData = null;
-              if(file){ currentFileData = file; contextPrompt += `File: ${file.name} (${file.language}). `; const model = editor.getModel(); const sel = editor.getSelection(); const selTxt = sel && !sel.isEmpty() && model ? model.getValueInRange(sel) : null; if(selTxt){ contextPrompt+=`Selected:\n\`\`\`${file.language||''}\n${selTxt}\n\`\`\`\n`; } else { const content = model?.getValue() ?? file.content ?? ''; if(content.length < 4000) contextPrompt+=`Content:\n\`\`\`${file.language||''}\n${content}\n\`\`\`\n`; else contextPrompt+=`(File content large). `; }}
-              const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', '); if (otherFiles) contextPrompt += `Other files: ${otherFiles}.\n`; contextPrompt += `\nUser Query: ${messageText}`;
-              const userMsg = { role: 'user', parts: messageText }; currentAiChat.messages.push(userMsg); aiChatManager.appendMessage(userMsg.role, userMsg.parts); aiChatInput.value = ''; aiSendButton.disabled = true; currentAiApiCall = true; aiChatInput.disabled = true;
+              let contextPrompt = `You are RyxIDE AI, a friendly and helpful coding assistant. Be conversational but concise. You are embedded in a web-based IDE.\n`;              contextPrompt += `Current Project: ${currentProject.name || 'Unnamed Project'}.\n`;
+              let currentFileData = null;
+              if (currentOpenFileId && editor) {
+                  const file = currentProject.files.find(f => f.id === currentOpenFileId);
+                  const model = editor.getModel();
+                  if (file && model) {
+                      currentFileData = file;
+                      contextPrompt += `Current File: ${file.name} (Language: ${file.language}).\n`;
+                      const selection = editor.getSelection();
+                      const selectedText = selection && !selection.isEmpty() ? model.getValueInRange(selection) : null;
+                      if (selectedText) {
+                           contextPrompt += `User has selected this code:\n\`\`\`${file.language || ''}\n${selectedText}\n\`\`\`\n`;
+                      } else {
+                           const fileContent = model.getValue() ?? file.content ?? '';
+                           if (fileContent.length < 4000) {
+                                contextPrompt += `Full Content of ${file.name}:\n\`\`\`${file.language || ''}\n${fileContent}\n\`\`\`\n`;
+                           } else { contextPrompt += `(File ${file.name} content is large, only providing selection if made).\n`; }
+                      }
+                  }
+              }
+              const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', ');
+              if (otherFiles) contextPrompt += `Other project files (names only): ${otherFiles}.\n`;
+              contextPrompt += `\n--- User Query ---\n${messageText}`;
+              const userMsg = { role: 'user', parts: messageText }; currentAiChat.messages.push(userMsg); aiChatManager.appendMessage(userMsg.role, userMsg.parts);
+              aiChatInput.value = ''; aiSendButton.disabled = true; currentAiApiCall = true; aiChatInput.disabled = true;
               aiChatMessages.querySelector('.thinking')?.remove(); aiChatManager.appendMessage('model', 'Thinking...'); aiChatMessages.lastChild?.classList.add('thinking');
               const historyForApi = currentAiChat.messages.slice(0, -1).filter(msg => !(msg.parts && msg.parts.includes('Thinking...'))).map(msg => ({ role: msg.role, parts: [{ text: Array.isArray(msg.parts) ? msg.parts.map(p => p.text || '').join('') : (msg.parts || '') }] }));
               const result = await callGeminiApi(contextPrompt, apiKey, historyForApi);
               aiChatMessages.querySelector('.thinking')?.remove();
-              let previewData = null; if (!result.error) { const aiMode = aiModeSelector.value; const codeBlockMatch = result.text?.match(/```(?:\w*\n)?([\s\S]*?)\n```/); if (aiMode === 'modify' && codeBlockMatch && currentFileData) { previewData = { fileId: currentFileData.id, fileName: currentFileData.name }; } const modelMsg = { role: 'model', parts: result.text || '', previewData }; currentAiChat.messages.push(modelMsg); aiChatManager.appendMessage(modelMsg.role, modelMsg.parts, previewData); saveProjectToStorage(currentProject); } else { aiChatManager.appendMessage('model', `Sorry, error: ${result.error}`); }
+              let previewData = null; if (!result.error) { const aiMode = aiModeSelector.value; const responseText = result.text || ''; const codeBlockMatch = responseText.match(/```(?:\w*\n)?([\s\S]*?)\n```/); if (aiMode === 'modify' && codeBlockMatch && currentFileData) { previewData = { fileId: currentFileData.id, fileName: currentFileData.name }; } const modelMsg = { role: 'model', parts: responseText, previewData: previewData }; currentAiChat.messages.push(modelMsg); aiChatManager.appendMessage(modelMsg.role, modelMsg.parts, previewData); saveProjectToStorage(currentProject); } else { aiChatManager.appendMessage('model', `Sorry, error: ${result.error}`); }
               aiSendButton.disabled = false; currentAiApiCall = false; aiChatInput.disabled = false; aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
          },
         handleNewChat: () => {
@@ -437,7 +433,6 @@ document.addEventListener('DOMContentLoaded', () => {
               hideModal(modalBackdrop, aiApplyModal); aiApplyAction = null;
          }
     };
-
     const runtimeManager = {
         loadPyodideIfNeeded: async () => { if (isPyodideReady) return true; if (isPyodideLoading) { await new Promise(r => setTimeout(r,100)); return runtimeManager.loadPyodideIfNeeded();} isPyodideLoading = true; showLoader(loaderOverlay, loaderText, "Loading Python..."); updateCredits(); try { pyodide = await window.loadPyodide(); await pyodide.loadPackage(['micropip']); console.log('Pyodide loaded.'); isPyodideReady = true; return true; } catch (e) { console.error('Pyodide Load Error:', e); outputConsole.textContent = `Error loading Python: ${e?.message||e}`; isPyodideReady=false; return false; } finally { isPyodideLoading = false; hideLoader(loaderOverlay); } },
         loadRubyVMIfNeeded: async () => { if (isRubyVMReady) return true; if (isRubyVMLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadRubyVMIfNeeded(); } if (!window.DefaultRubyVM) { outputConsole.textContent = "Error: Ruby WASM module failed."; return false; } isRubyVMLoading = true; showLoader(loaderOverlay, loaderText, "Loading Ruby VM..."); updateCredits(); try { const m = await window.DefaultRubyVM(); rubyVM = new m.RubyVM(); const printOutput=(l,msg)=>{outputConsole.textContent+=(l==='error'?'Ruby Error: ':'')+msg+'\n';}; rubyVM.printSync=printOutput; rubyVM.printlnSync=printOutput; await rubyVM.init(); console.log('Ruby VM initialized.'); isRubyVMReady = true; return true; } catch (e) { console.error('Ruby Load Error:', e); outputConsole.textContent = `Error loading Ruby: ${e?.message||e}`; rubyVM=null; isRubyVMReady=false; return false; } finally { isRubyVMLoading = false; hideLoader(loaderOverlay); } },
@@ -467,16 +462,14 @@ document.addEventListener('DOMContentLoaded', () => {
         runRubyCode: async (code) => { const ready = await runtimeManager.loadRubyVMIfNeeded(); if(!ready || !rubyVM) { updateStatus('Ruby Runtime Fail', 'error'); return; } outputConsole.textContent='Running Ruby (Exp)...\n---\n'; updateStatus('Running Ruby...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running Ruby..."); try { await rubyVM.evalAsync(code); outputConsole.textContent+='\n--- Ruby Finished ---'; updateStatus('Ruby Finished', 'success'); } catch(e){ console.error('Ruby error:', e); outputConsole.textContent+=`\n--- Ruby Error ---\n${e?.message||e}`; updateStatus('Ruby Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop=outputConsole.scrollHeight; }},
         runCSharpCode: async (code) => { const ready = await runtimeManager.loadDotnetRuntimeIfNeeded(); if (!ready || !dotnetRuntimeExports?.compileAndRunAsync) { outputConsole.textContent += "\n.NET env failed."; updateStatus('.NET Fail', 'error'); return; } outputConsole.textContent='Running C# (PoC)...\n---\n'; updateStatus('Running C#...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running C#..."); try { const result = await dotnetRuntimeExports.compileAndRunAsync(code); if (result.output?.length > 0) outputConsole.textContent += result.output.join('\n') + '\n'; if (!result.success && result.errors?.length > 0) { outputConsole.textContent += '---\nErrors:\n' + result.errors.join('\n'); updateStatus('C# Error', 'error'); } else if(result.success) updateStatus('C# Finished', 'success'); else updateStatus('C# Finished (?)', 'warning'); } catch (e) { console.error('C# WASM Error:', e); outputConsole.textContent += `\n--- C# WASM Error ---\n${e?.message||e}`; updateStatus('C# Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop = outputConsole.scrollHeight; }}
     };
-
     const editorActions = {
         find: () => { if (editor) editor.getAction('actions.find').run(); },
         replace: () => { if (editor) editor.getAction('editor.action.startFindReplaceAction').run(); },
         gotoLine: () => { if (!editor) return; const line = parseInt(gotoLineInput.value, 10); if (!isNaN(line) && line > 0) { try { const maxLine = editor.getModel()?.getLineCount() || 1; const targetLine = Math.max(1, Math.min(line, maxLine)); editor.revealLineInCenterIfOutsideViewport(targetLine, 0); editor.setPosition({ lineNumber: targetLine, column: 1 }); editor.focus(); } catch (e) { updateStatus(`Invalid line: ${line}`, 'warning');}} else if (gotoLineInput.value !== '') updateStatus('Invalid line.', 'warning'); gotoLineInput.value = ''; },
         showShortcuts: () => { showModal(modalBackdrop, shortcutsModal); }
     };
-
     function setupBaseEventListeners() {
-        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'index.html'; });
+        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'dashboard.html'; });
         themeSelectorHeader.addEventListener('change', (e) => { currentSettings.theme = e.target.value; saveSettings(currentSettings); applySettings(); });
         shortcutsButton.addEventListener('click', editorActions.showShortcuts);
         tabBar.addEventListener('click', handleTabSwitch);
@@ -498,7 +491,6 @@ document.addEventListener('DOMContentLoaded', () => {
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
     }
-
     function setupEditorSpecificEventListeners() {
         if(!editor) { return; }
         saveProjectButton.addEventListener('click', handleSaveProject);
@@ -511,7 +503,6 @@ document.addEventListener('DOMContentLoaded', () => {
         aiChatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiChatManager.handleSendMessage(); } });
         window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { if (modalBackdrop.classList.contains('modal-hidden')) { e.preventDefault(); if (!saveProjectButton.disabled) handleSaveProject(); } } });
     }
-
     function updateCredits() {
         const features = new Set(['Monaco', 'Gemini']);
         if (isPyodideReady || isPyodideLoading) features.add('Pyodide');
@@ -521,7 +512,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
-
     function updateRunButtonState() {
          const file = currentProject?.files.find(f => f.id === currentOpenFileId);
          const lang = file?.language || 'plaintext';
@@ -537,6 +527,5 @@ document.addEventListener('DOMContentLoaded', () => {
              runExternalButton.title = `Run ${lang} in External Sandbox`;
          }
     }
-
     initializeEditorPage();
 });
