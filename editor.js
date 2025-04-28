@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleMissingProject(message) {
          alert(message + " Redirecting to dashboard.");
          setCurrentProjectId(null);
-         window.location.href = 'dashboard.html';
+         window.location.href = 'index.html';
     }
     function ensureProjectIntegrity() {
          if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
@@ -469,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showShortcuts: () => { showModal(modalBackdrop, shortcutsModal); }
     };
     function setupBaseEventListeners() {
-        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'dashboard.html'; });
+        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'index.html'; });
         themeSelectorHeader.addEventListener('change', (e) => { currentSettings.theme = e.target.value; saveSettings(currentSettings); applySettings(); });
         shortcutsButton.addEventListener('click', editorActions.showShortcuts);
         tabBar.addEventListener('click', handleTabSwitch);
