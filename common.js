@@ -7,14 +7,12 @@ const DEFAULT_SETTINGS = {
     theme: 'vs-dark',
     autoSave: false,
 };
-
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
 }
-
 function getLanguageFromFilename(filename) {
     const extension = filename?.split('.').pop()?.toLowerCase();
     const langMap = {
@@ -37,7 +35,6 @@ function getLanguageFromFilename(filename) {
     };
     return langMap[extension] || 'plaintext';
 }
-
 function formatDate(timestamp) {
     if (!timestamp) return 'N/A';
     try {
@@ -50,7 +47,6 @@ function formatDate(timestamp) {
         return 'Invalid Date';
     }
 }
-
 function escapeHtml(unsafe) {
     if (typeof unsafe !== 'string') return '';
     return unsafe
@@ -60,7 +56,6 @@ function escapeHtml(unsafe) {
          .replace(/"/g, "&quot;")
          .replace(/'/g, "&#039;");
 }
-
 function safeLocalStorageGet(key, defaultValue = null) {
     try {
         const item = localStorage.getItem(key);
@@ -70,7 +65,6 @@ function safeLocalStorageGet(key, defaultValue = null) {
         return defaultValue;
     }
 }
-
 function safeLocalStorageSet(key, value) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
@@ -85,7 +79,6 @@ function safeLocalStorageSet(key, value) {
         return false;
     }
 }
-
 function safeLocalStorageRemove(key) {
      try {
         localStorage.removeItem(key);
@@ -95,7 +88,6 @@ function safeLocalStorageRemove(key) {
         return false;
      }
 }
-
 function getAllProjectsList() { return safeLocalStorageGet(LS_PROJECTS_LIST_KEY, []); }
 function saveAllProjectsList(list) { return safeLocalStorageSet(LS_PROJECTS_LIST_KEY, list); }
 function getProjectFromStorage(projectId) { return projectId ? safeLocalStorageGet(LS_PROJECT_KEY_PREFIX + projectId) : null; }
@@ -133,20 +125,17 @@ function saveApiKey(key) { return safeLocalStorageSet(LS_GEMINI_API_KEY, key ?? 
 function getApiKey() { return safeLocalStorageGet(LS_GEMINI_API_KEY); }
 function getSettings() { return safeLocalStorageGet(LS_SETTINGS_KEY, { ...DEFAULT_SETTINGS }); }
 function saveSettings(settings) { return safeLocalStorageSet(LS_SETTINGS_KEY, settings); }
-
 function showLoader(loaderOverlay, loaderTextElement, text = "Loading...") {
     if (loaderOverlay && loaderTextElement) {
         loaderTextElement.textContent = text;
         loaderOverlay.classList.remove('modal-hidden');
     }
 }
-
 function hideLoader(loaderOverlay) {
      if (loaderOverlay) {
         loaderOverlay.classList.add('modal-hidden');
      }
 }
-
 function showModal(modalBackdrop, modalElement) {
     if (!modalBackdrop || !modalElement) return;
     modalBackdrop.classList.remove('modal-hidden');
@@ -154,13 +143,11 @@ function showModal(modalBackdrop, modalElement) {
     const focusable = modalElement.querySelector('input:not([type="hidden"]), select, textarea, button:not([disabled])');
     focusable?.focus();
 }
-
 function hideModal(modalBackdrop, ...modalElements) {
      if (!modalBackdrop) return;
      modalBackdrop.classList.add('modal-hidden');
      modalElements.forEach(el => el?.classList.add('modal-hidden'));
 }
-
 function createDOMElement(tag, options = {}) {
     const element = document.createElement(tag);
     if (options.className) element.className = options.className;
@@ -191,15 +178,12 @@ function createDOMElement(tag, options = {}) {
     }
     return element;
 }
-
 async function callGeminiApi(prompt, apiKey, history = []) {
      if (!apiKey) {
         return { error: "API Key not set. Please add it in Settings." };
      }
-
-     const modelName = "gemini-1.5-flash-latest";
+     const modelName = "gemini-2.5-pro-preview-03-25";
      const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
      const requestBody = {
          contents: [
              ...history,
@@ -208,7 +192,13 @@ async function callGeminiApi(prompt, apiKey, history = []) {
                  parts: [{ text: prompt }]
              }
          ],
-         generationConfig: {}
+         generationConfig: {
+            temperature: 0.7
+         },
+         // These are the instructions
+          systemInstruction: {
+             parts: [{ text: "You are RyxAI, a friendly and helpful coding assistant in the RyxIDE web editor. Be encouraging and clear in your explanations."}]
+          }
      };
 
      try {
@@ -217,32 +207,35 @@ async function callGeminiApi(prompt, apiKey, history = []) {
              headers: { 'Content-Type': 'application/json', },
              body: JSON.stringify(requestBody)
          });
-
          const responseData = await response.json();
-
          if (!response.ok) {
              console.error("Gemini REST API Error Response:", responseData);
              let errorMessage = `API Error (${response.status}): ${responseData.error?.message || 'Unknown API error.'}`;
              if (responseData.error?.details) {
                 errorMessage += ` Details: ${JSON.stringify(responseData.error.details)}`;
              }
-              if (response.status === 400) errorMessage += " (Check API key or request format)";
-              if (response.status === 429) errorMessage += " (Quota exceeded)";
+              if (response.status === 400 && responseData.error?.message?.includes("API_KEY_INVALID")) {
+                 errorMessage = "Gemini API Error: The provided API Key is invalid. Please check Settings.";
+              } else if (response.status === 400) {
+                 errorMessage += " (Bad Request - Check API key or request format)";
+              } else if (response.status === 429) {
+                 errorMessage += " (Quota exceeded)";
+              } else if (response.status === 404) {
+                   errorMessage = `Gemini API Error: Model '${modelName}' not found or unavailable with your key.`;
+              }
              return { error: errorMessage };
          }
-
          const generatedText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-
          if (generatedText !== undefined) {
              return { text: generatedText };
          } else {
-             console.error("Gemini REST API - Unexpected response structure:", responseData);
+             console.error("Gemini REST API - Unexpected response structure or blocked content:", responseData);
              const finishReason = responseData.candidates?.[0]?.finishReason;
              const safetyRatings = responseData.promptFeedback?.safetyRatings || responseData.candidates?.[0]?.safetyRatings;
              if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || safetyRatings?.some(r => r.blocked)) {
-                 return { error: `Content generation blocked due to safety reasons (Finish Reason: ${finishReason}).` };
+                 return { error: `Content generation blocked due to safety/policy reasons (Finish Reason: ${finishReason}). Please rephrase your request.` };
              }
-             return { error: "Failed to extract generated text from API response." };
+             return { error: "Failed to extract text from API response. Content may be empty or blocked." };
          }
 
      } catch (error) {
@@ -250,7 +243,6 @@ async function callGeminiApi(prompt, apiKey, history = []) {
          return { error: `Network Error: ${error.message}. Could not reach Gemini API.` };
      }
 }
-
 const projectTemplates = {
     web_basic: [
         { name: 'index.html', language: 'html', content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<title>\${projectName}</title>\n\t<link rel="stylesheet" href="style.css">\n</head>\n<body>\n\t<h1>Hello, \${projectName}!</h1>\n\t<p>Welcome to your new RyxIDE project.</p>\n\t<script src="script.js"></script>\n</body>\n</html>` },
@@ -265,7 +257,6 @@ const projectTemplates = {
      ],
     empty: []
 };
-
 const starterContentByLanguage = {
      html: `<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<title>New Page</title>\n\t<link rel="stylesheet" href="style.css">\n</head>\n<body>\n\t<h1>New HTML File</h1>\n\t<p>Content goes here.</p>\n\t<script src="script.js"></script>\n</body>\n</html>`,
      css: `body {\n\tfont-family: sans-serif;\n}`,
@@ -282,7 +273,6 @@ const starterContentByLanguage = {
      json: `{\n\t"key": "value"\n}`,
      plaintext: ``,
  };
-
 const externalSandboxLinks = {
     java: "https://www.jdoodle.com/online-java-compiler/",
     csharp: "https://dotnetfiddle.net/",
