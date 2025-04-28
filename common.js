@@ -182,7 +182,7 @@ async function callGeminiApi(prompt, apiKey, history = []) {
      if (!apiKey) {
         return { error: "API Key not set. Please add it in Settings." };
      }
-     const modelName = "gemini-2.5-pro-preview-03-25";
+     const modelName = "gemini-2.5-pro-exp-03-25";
      const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
      const requestBody = {
          contents: [
