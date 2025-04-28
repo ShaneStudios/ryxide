@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiApplyCancelButton = document.getElementById('ai-apply-cancel-button');
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const shortcutsCloseButton = document.getElementById('shortcuts-close-button');
+
     let editor = null;
     let currentProject = null;
     let currentOpenFileId = null;
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pyodide = null, isPyodideLoading = false, isPyodideReady = false;
     let rubyVM = null, isRubyVMLoading = false, isRubyVMReady = false;
     let isDotnetRuntimeLoading = false, isDotnetRuntimeReady = false, dotnetRuntimeExports = null;
+
     function initializeEditorPage() {
         const projectId = getCurrentProjectId();
         if (!projectId) { handleMissingProject("No project selected."); return; }
@@ -73,11 +75,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setupBaseEventListeners();
         setupMonaco();
     }
+
     function handleMissingProject(message) {
          alert(message + " Redirecting to dashboard.");
          setCurrentProjectId(null);
-         window.location.href = 'index.html';
+         window.location.href = 'dashboard.html';
     }
+
     function ensureProjectIntegrity() {
          if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
              const defaultChatId = generateUUID();
@@ -87,7 +91,12 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!currentProject.currentAiChatId || !currentProject.aiChats.find(c => c.id === currentProject.currentAiChatId)) {
               currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null;
           }
+          currentProject.aiChats.forEach(chat => {
+              if (!chat.messages) chat.messages = [];
+              chat.messages = chat.messages.filter(msg => msg && msg.role && msg.parts); // Basic validation
+          });
     }
+
     function postMonacoSetup() {
          currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
          fileManager.renderList();
@@ -96,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
          } else {
               updateRunButtonState();
               if (editor) {
-                  editor.setValue("// Welcome to RyxIDE!\n// Select or create a file from the left pane to get started.");
+                  editor.setValue("// Welcome to RyxIDE!\n// Select or create a file from the left pane.");
                   monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
               }
          }
@@ -105,246 +114,90 @@ document.addEventListener('DOMContentLoaded', () => {
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
     }
+
      function applySettings() {
         if (editor) {
             monaco.editor.setTheme(currentSettings.theme);
         }
         themeSelectorHeader.value = currentSettings.theme;
     }
+
     function setupMonaco() {
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' }});
         window.MonacoEnvironment = {
             getWorkerUrl: function (moduleId, label) {
                 const workerMap = {
-                    'editorWorkerService': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.worker.js',
-                    'css': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/css/css.worker.js',
-                    'html': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/html/html.worker.js',
-                    'json': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/json/json.worker.js',
-                    'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js',
-                    'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js'
-                };
+                    'editorWorkerService': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.worker.js', 'css': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/css/css.worker.js', 'html': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/html/html.worker.js', 'json': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/json/json.worker.js', 'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js', 'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js' };
                 const workerSrc = workerMap[label] || workerMap.editorWorkerService;
-                return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-                    self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' };
-                    importScripts('${workerSrc}');`
-                )}`;
+                return `data:text/javascript;charset=utf-8,${encodeURIComponent(` self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' }; importScripts('${workerSrc}');` )}`;
             }
         };
         require(['vs/editor/editor.main'], function() {
             try {
-                 editor = monaco.editor.create(editorContainer, {
-                     theme: currentSettings.theme,
-                     automaticLayout: true,
-                     minimap: { enabled: true },
-                     wordWrap: 'on',
-                     contextmenu: true,
-                     fontSize: 14,
-                     scrollbar: {
-                         verticalScrollbarSize: 10,
-                         horizontalScrollbarSize: 10
-                     },
-                 });
-                 editor.onDidChangeModelContent((e) => {
-                     if (!e.isFlush && currentProject && currentOpenFileId) {
-                         setEditorDirty(true);
-                         handleAutoSave();
-                     }
-                 });
-                 setupEditorKeybindings();
-                 setupMonacoCompletions();
-                 postMonacoSetup();
-             } catch (error) {
-                 console.error("Fatal: Failed to initialize Monaco Editor instance:", error);
-                 editorContainer.textContent = `Error initializing code editor: ${error.message}. Reload or check console.`;
-                 disableEditorFeatures();
-             }
-        }, function(error) {
-             console.error("Fatal: Failed to load Monaco Editor modules:", error);
-             editorContainer.textContent = `Failed to load code editor library. Check connection/console. Error: ${error}`;
-             disableEditorFeatures();
-        });
+                 editor = monaco.editor.create(editorContainer, { theme: currentSettings.theme, automaticLayout: true, minimap: { enabled: true }, wordWrap: 'on', contextmenu: true, fontSize: 14, scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }, });
+                 editor.onDidChangeModelContent((e) => { if (!e.isFlush && currentProject && currentOpenFileId) { setEditorDirty(true); handleAutoSave(); } });
+                 setupEditorKeybindings(); setupMonacoCompletions(); postMonacoSetup();
+             } catch (error) { console.error("Monaco Init Error:", error); editorContainer.textContent = `Editor Init Error: ${error.message}. Reload.`; disableEditorFeatures(); }
+        }, function(error) { console.error("Monaco Load Error:", error); editorContainer.textContent = `Editor Load Error. Check connection/console. Error: ${error}`; disableEditorFeatures(); });
     }
+
     function disableEditorFeatures(){
-         saveProjectButton.disabled = true; runButton.disabled = true; runExternalButton.style.display = 'none'; findButton.disabled = true;
-         replaceButton.disabled = true; gotoLineButton.disabled = true; gotoLineInput.disabled = true; renameFileButton.disabled = true; deleteFileButton.disabled = true;
-         aiSendButton.disabled = true; aiChatInput.disabled = true;
+         saveProjectButton.disabled = true; runButton.disabled = true; runExternalButton.style.display = 'none'; findButton.disabled = true; replaceButton.disabled = true; gotoLineButton.disabled = true; gotoLineInput.disabled = true; renameFileButton.disabled = true; deleteFileButton.disabled = true; aiSendButton.disabled = true; aiChatInput.disabled = true;
     }
+
     function setupEditorKeybindings() {
-         if (!editor) return;
-         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible');
-         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run());
-         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run());
+         if (!editor) return; editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible'); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run()); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run());
     }
+
     function setupMonacoCompletions() {
-         if (!window.monaco) { return; }
-         monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true });
-         monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'clog', detail: 'console.log()', documentation: 'Log a message to the console', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'console.log($1);', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'fun', detail: 'function', documentation: 'Define a function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'forloop', detail:'for loop', documentation: 'Standard for loop', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'timeout', detail: 'setTimeout', documentation: 'setTimeout function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', documentation: 'Formatted print statement', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'print(f"$1")', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'def', detail:'def function', documentation: 'Define function with docstring', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'class', detail:'class definition', documentation: 'Define class with __init__', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word = model.getWordUntilPosition(position); const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn }; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', documentation: 'Basic HTML5 structure', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'div', detail:'<div> element', documentation: 'Div with class attribute', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }, { label: 'canvas', detail:'<canvas> element', documentation: 'HTML5 Canvas element', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range: range }] }; }});
+         if (!window.monaco) { return; } monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true });
+         monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'clog', detail: 'console.log()', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'console.log($1);', insertTextRules: 4, range: range }, { label: 'fun', detail: 'function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'forloop', detail:'for loop', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'timeout', detail: 'setTimeout', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: 4, range: range }] }; }});
+         monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'print(f"$1")', insertTextRules: 4, range: range }, { label: 'def', detail:'def function', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: 4, range: range }, { label: 'class', detail:'class definition', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: 4, range: range }] }; }});
+         monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: 4, range: range }, { label: 'div', detail:'<div> element', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: 4, range: range }, { label: 'canvas', detail:'<canvas> element', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: 4, range: range }] }; }});
     }
+
     function setEditorDirty(isDirty) {
-        if (!currentOpenFileId && isDirty) isDirty = false;
-        if (editorDirty === isDirty) return;
-        editorDirty = isDirty;
-        saveProjectButton.disabled = !isDirty;
-        statusIndicator.textContent = isDirty ? '* Unsaved Changes' : '';
-        statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
+        if (!currentOpenFileId && isDirty) isDirty = false; if (editorDirty === isDirty) return;
+        editorDirty = isDirty; saveProjectButton.disabled = !isDirty;
+        statusIndicator.textContent = isDirty ? '* Unsaved Changes' : ''; statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
         document.title = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`;
     }
+
     function updateStatus(message, type = 'info', duration = 3000) {
-         statusIndicator.textContent = message;
-         statusIndicator.className = `status-indicator status-${type}`;
-         if (duration > 0) {
-            setTimeout(() => {
-                if (!editorDirty && statusIndicator.textContent === message) {
-                    statusIndicator.textContent = '';
-                    statusIndicator.className = 'status-indicator';
-                }
-            }, duration);
-         }
+         statusIndicator.textContent = message; statusIndicator.className = `status-indicator status-${type}`;
+         if (duration > 0) { setTimeout(() => { if (!editorDirty && statusIndicator.textContent === message) { statusIndicator.textContent = ''; statusIndicator.className = 'status-indicator'; } }, duration); }
     }
+
     function handleSaveProject() {
-        if (!currentProject || !editor) {
-            return;
-        }
-        if (currentOpenFileId) {
-            const file = currentProject.files.find(f => f.id === currentOpenFileId);
-            if (file) {
-                file.content = editor.getValue();
-            } else {
-                 updateStatus('Error: Open file data missing!', 'error', 5000);
-                 return;
-            }
-        }
-        if(saveProjectToStorage(currentProject)) {
-            setEditorDirty(false);
-            updateStatus(`Project saved.`, 'success');
-        } else {
-             updateStatus('Error Saving Project!', 'error', 5000);
-        }
+        if (!currentProject || !editor) { return; }
+        if (currentOpenFileId) { const file = currentProject.files.find(f => f.id === currentOpenFileId); if (file) { file.content = editor.getValue(); } else { updateStatus('Error: Open file data missing!', 'error', 5000); return; } }
+        if(saveProjectToStorage(currentProject)) { setEditorDirty(false); updateStatus(`Project saved.`, 'success'); }
+        else { updateStatus('Error Saving Project!', 'error', 5000); }
     }
-    function handleAutoSave() {
-        if (!currentSettings.autoSave || !editorDirty) return;
-        clearTimeout(autoSaveTimeout);
-        autoSaveTimeout = setTimeout(handleSaveProject, 1500);
-    }
+
+    function handleAutoSave() { if (!currentSettings.autoSave || !editorDirty) return; clearTimeout(autoSaveTimeout); autoSaveTimeout = setTimeout(handleSaveProject, 1500); }
+
     const fileManager = {
-        renderList: () => {
-            if (!currentProject) return;
-            fileListUl.innerHTML = '';
-            currentProject.files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
-                const iconClass = fileManager.getIconClass(file.name);
-                const icon = createDOMElement('i', { className: `file-icon ${iconClass}` });
-                const nameSpan = createDOMElement('span', { textContent: file.name });
-                const li = createDOMElement('li', { dataset: { fileId: file.id }, title: file.name, children: [icon, nameSpan] });
-                if (file.id === currentOpenFileId) li.classList.add('active');
-                fileListUl.appendChild(li);
-            });
-            const fileSelected = !!currentOpenFileId;
-            deleteFileButton.disabled = !fileSelected;
-            renameFileButton.disabled = !fileSelected;
-        },
-        getIconClass: (filename) => {
-             const lang = getLanguageFromFilename(filename);
-             const iconMap = {html:'fab fa-html5',css:'fab fa-css3-alt',javascript:'fab fa-js-square',python:'fab fa-python',markdown:'fab fa-markdown',json:'fas fa-file-code',java:'fab fa-java',csharp:'fas fa-hashtag',cpp:'fas fa-plus',c:'fas fa-copyright',rust:'fab fa-rust',go:'fab fa-google',php:'fab fa-php',rb:'fas fa-gem',sh:'fas fa-terminal',xml:'fas fa-file-code',yaml:'fas fa-file-alt'};
-             return iconMap[lang] || 'fas fa-file';
-        },
-        open: (fileId, force = false) => {
-             if (!currentProject || !editor) return;
-             if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return;
-             const file = currentProject.files.find(f => f.id === fileId);
-             if (!file) {
-                  editor.setValue(`// Error: File not found (ID: ${fileId})`);
-                  if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
-                  currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return;
-             }
-             currentOpenFileId = file.id; currentProject.openFileId = file.id;
-             const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`);
-             let model = monaco.editor.getModel(modelUri);
-             if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); }
-             else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); }
-             editor.setModel(model); editor.focus();
-             outputConsole.textContent = ''; previewFrame.srcdoc = '';
-             fileManager.renderList(); setEditorDirty(false); updateRunButtonState();
-        },
+        renderList: () => { if (!currentProject) return; fileListUl.innerHTML = ''; currentProject.files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => { const iconClass = fileManager.getIconClass(file.name); const icon = createDOMElement('i', { className: `file-icon ${iconClass}` }); const nameSpan = createDOMElement('span', { textContent: file.name }); const li = createDOMElement('li', { dataset: { fileId: file.id }, title: file.name, children: [icon, nameSpan] }); if (file.id === currentOpenFileId) li.classList.add('active'); fileListUl.appendChild(li); }); const fileSelected = !!currentOpenFileId; deleteFileButton.disabled = !fileSelected; renameFileButton.disabled = !fileSelected; },
+        getIconClass: (filename) => { const lang = getLanguageFromFilename(filename); const iconMap = {html:'fab fa-html5',css:'fab fa-css3-alt',javascript:'fab fa-js-square',python:'fab fa-python',markdown:'fab fa-markdown',json:'fas fa-file-code',java:'fab fa-java',csharp:'fas fa-hashtag',cpp:'fas fa-plus',c:'fas fa-copyright',rust:'fab fa-rust',go:'fab fa-google',php:'fab fa-php',rb:'fas fa-gem',sh:'fas fa-terminal',xml:'fas fa-file-code',yaml:'fas fa-file-alt'}; return iconMap[lang] || 'fas fa-file'; },
+        open: (fileId, force = false) => { if (!currentProject || !editor) return; if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { editor.setValue(`// Error: File not found (ID: ${fileId})`); if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return; } currentOpenFileId = file.id; currentProject.openFileId = file.id; const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`); let model = monaco.editor.getModel(modelUri); if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); } else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); } editor.setModel(model); editor.focus(); outputConsole.textContent = ''; previewFrame.srcdoc = ''; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); },
         handleNew: () => { fileNameInput.value = ''; showModal(modalBackdrop, newFileModal); },
-        confirmNew: () => {
-            const fileName = fileNameInput.value.trim(); if (!fileName || !currentProject) { alert("Invalid file name."); return; }
-            if (currentProject.files.some(f => f.name.toLowerCase() === fileName.toLowerCase())) { alert(`File "${fileName}" already exists.`); fileNameInput.focus(); return; }
-            const fileLang = getLanguageFromFilename(fileName); const newFile = { id: generateUUID(), name: fileName, language: fileLang, content: starterContentByLanguage[fileLang] || '' };
-            currentProject.files.push(newFile); currentProject.openFileId = newFile.id;
-            if(saveProjectToStorage(currentProject)) { fileManager.renderList(); fileManager.open(newFile.id, true); setEditorDirty(true); hideModal(modalBackdrop, newFileModal); }
-        },
-        handleRename: (fileIdToRename = null) => {
-            const fileId = fileIdToRename || currentOpenFileId; if (!currentProject || !fileId) return;
-            const file = currentProject.files.find(f => f.id === fileId); if (!file) { return; }
-            newFileNameInput.value = file.name; renameFileModal.dataset.fileId = fileId; showModal(modalBackdrop, renameFileModal);
-        },
-        confirmRename: () => {
-             const fileId = renameFileModal.dataset.fileId; const newName = newFileNameInput.value.trim(); if (!fileId || !newName || !currentProject) { alert("Invalid input."); return; }
-             const file = currentProject.files.find(f => f.id === fileId); if (!file) { alert("File not found."); hideModal(modalBackdrop, renameFileModal); return; }
-             if (newName === file.name) { hideModal(modalBackdrop, renameFileModal); return; }
-             if (currentProject.files.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.id !== fileId)) { alert(`Name "${newName}" exists.`); newFileNameInput.focus(); return; }
-             const oldName = file.name; file.name = newName; file.language = getLanguageFromFilename(newName);
-             if(saveProjectToStorage(currentProject)) {
-                 setEditorDirty(true); fileManager.renderList();
-                 if (currentOpenFileId === fileId && editor) {
-                     const currentModelInstance = editor.getModel();
-                     const oldUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${oldName}`);
-                     if (currentModelInstance && currentModelInstance.uri.toString() === oldUri.toString()) {
-                         const newUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${newName}`);
-                         const currentContent = currentModelInstance.getValue(); const currentViewState = editor.saveViewState();
-                         const newModel = monaco.editor.createModel(currentContent, file.language, newUri);
-                         editor.setModel(newModel);
-                         if (currentViewState) editor.restoreViewState(currentViewState);
-                         editor.focus(); currentModelInstance.dispose();
-                     } else { fileManager.open(fileId, true); }
-                 }
-                 hideModal(modalBackdrop, renameFileModal);
-             }
-        },
-        handleDelete: () => {
-            if (!currentProject || !currentOpenFileId) return; const fileToDelete = currentProject.files.find(f => f.id === currentOpenFileId); if (!fileToDelete) return;
-            if (confirm(`Delete "${fileToDelete.name}"? Cannot be undone.`)) {
-                const fileUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileToDelete.id}/${fileToDelete.name}`);
-                currentProject.files = currentProject.files.filter(f => f.id !== currentOpenFileId);
-                const nextFileId = currentProject.files[0]?.id || null; currentProject.openFileId = nextFileId;
-                if (saveProjectToStorage(currentProject)) {
-                    setEditorDirty(false);
-                    monaco.editor.getModel(fileUri)?.dispose();
-                    if (nextFileId) fileManager.open(nextFileId, true);
-                    else { currentOpenFileId = null; if (editor) editor.setModel(null); fileManager.renderList(); updateRunButtonState(); }
-                }
-            }
-        }
+        confirmNew: () => { const fileName = fileNameInput.value.trim(); if (!fileName || !currentProject) { alert("Invalid file name."); return; } if (currentProject.files.some(f => f.name.toLowerCase() === fileName.toLowerCase())) { alert(`File "${fileName}" already exists.`); fileNameInput.focus(); return; } const fileLang = getLanguageFromFilename(fileName); const newFile = { id: generateUUID(), name: fileName, language: fileLang, content: starterContentByLanguage[fileLang] || '' }; currentProject.files.push(newFile); currentProject.openFileId = newFile.id; if(saveProjectToStorage(currentProject)) { fileManager.renderList(); fileManager.open(newFile.id, true); setEditorDirty(true); hideModal(modalBackdrop, newFileModal); } },
+        handleRename: (fileIdToRename = null) => { const fileId = fileIdToRename || currentOpenFileId; if (!currentProject || !fileId) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { return; } newFileNameInput.value = file.name; renameFileModal.dataset.fileId = fileId; showModal(modalBackdrop, renameFileModal); },
+        confirmRename: () => { const fileId = renameFileModal.dataset.fileId; const newName = newFileNameInput.value.trim(); if (!fileId || !newName || !currentProject) { alert("Invalid input."); return; } const file = currentProject.files.find(f => f.id === fileId); if (!file) { alert("File not found."); hideModal(modalBackdrop, renameFileModal); return; } if (newName === file.name) { hideModal(modalBackdrop, renameFileModal); return; } if (currentProject.files.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.id !== fileId)) { alert(`Name "${newName}" exists.`); newFileNameInput.focus(); return; } const oldName = file.name; file.name = newName; file.language = getLanguageFromFilename(newName); if(saveProjectToStorage(currentProject)) { setEditorDirty(true); fileManager.renderList(); if (currentOpenFileId === fileId && editor) { const currentModelInstance = editor.getModel(); const oldUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${oldName}`); if (currentModelInstance && currentModelInstance.uri.toString() === oldUri.toString()) { const newUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${newName}`); const currentContent = currentModelInstance.getValue(); const currentViewState = editor.saveViewState(); const newModel = monaco.editor.createModel(currentContent, file.language, newUri); editor.setModel(newModel); if (currentViewState) editor.restoreViewState(currentViewState); editor.focus(); currentModelInstance.dispose(); } else { fileManager.open(fileId, true); } } hideModal(modalBackdrop, renameFileModal); } },
+        handleDelete: () => { if (!currentProject || !currentOpenFileId) return; const fileToDelete = currentProject.files.find(f => f.id === currentOpenFileId); if (!fileToDelete) return; if (confirm(`Delete "${fileToDelete.name}"? Cannot be undone.`)) { const fileUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileToDelete.id}/${fileToDelete.name}`); currentProject.files = currentProject.files.filter(f => f.id !== currentOpenFileId); const nextFileId = currentProject.files[0]?.id || null; currentProject.openFileId = nextFileId; if (saveProjectToStorage(currentProject)) { setEditorDirty(false); monaco.editor.getModel(fileUri)?.dispose(); if (nextFileId) fileManager.open(nextFileId, true); else { currentOpenFileId = null; if (editor) editor.setModel(null); fileManager.renderList(); updateRunButtonState(); } } } }
     };
+
     function handleTabSwitch(event) {
-         const button = event.target.closest('.tab-button'); if (!button) return;
-         const tabName = button.dataset.tab;
-         tabButtons.forEach(btn => btn.classList.toggle('active', btn === button));
-         tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
-         if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
-         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
+         tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
+         if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); } else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
+
     const aiChatManager = {
-        loadChats: () => {
-             if (!currentProject?.aiChats) return; aiChatSelector.innerHTML = '';
-             currentProject.aiChats.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-             currentProject.aiChats.forEach(chat => { const option = createDOMElement('option', { value: chat.id, textContent: chat.name || `Chat ${formatDate(chat.createdAt) || chat.id.substring(0,4)}` }); if (chat.id === currentProject.currentAiChatId) option.selected = true; aiChatSelector.appendChild(option); });
-             aiChatManager.switchChat(currentProject.currentAiChatId);
-             aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1;
-        },
-        switchChat: (chatId) => {
-             if (!currentProject?.aiChats) return; const chat = currentProject.aiChats.find(c => c.id === chatId);
-             if (chat) { currentAiChat = chat; currentProject.currentAiChatId = chatId; aiChatManager.renderMessages(); if (aiChatSelector.value !== chatId) aiChatSelector.value = chatId; aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; }
-             else { if(currentProject.aiChats.length > 0) aiChatManager.switchChat(currentProject.aiChats[0].id); else { currentAiChat = null; aiChatMessages.innerHTML = '<p class="empty-chat">No chats.</p>'; aiDeleteChatButton.disabled = true; } }
-        },
-        renderMessages: () => {
-             aiChatMessages.innerHTML = '';
-             if (!currentAiChat?.messages?.length) { aiChatMessages.innerHTML = '<p class="empty-chat">Ask AI...</p>'; return; }
-             currentAiChat.messages.forEach(msg => aiChatManager.appendMessage(msg.role, msg.parts, msg.previewData));
-             aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
-        },
+        loadChats: () => { if (!currentProject?.aiChats) return; aiChatSelector.innerHTML = ''; currentProject.aiChats.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); currentProject.aiChats.forEach(chat => { const option = createDOMElement('option', { value: chat.id, textContent: chat.name || `Chat ${formatDate(chat.createdAt) || chat.id.substring(0,4)}` }); if (chat.id === currentProject.currentAiChatId) option.selected = true; aiChatSelector.appendChild(option); }); aiChatManager.switchChat(currentProject.currentAiChatId); aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; },
+        switchChat: (chatId) => { if (!currentProject?.aiChats) return; const chat = currentProject.aiChats.find(c => c.id === chatId); if (chat) { currentAiChat = chat; currentProject.currentAiChatId = chatId; aiChatManager.renderMessages(); if (aiChatSelector.value !== chatId) aiChatSelector.value = chatId; aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; } else { if(currentProject.aiChats.length > 0) aiChatManager.switchChat(currentProject.aiChats[0].id); else { currentAiChat = null; aiChatMessages.innerHTML = '<p class="empty-chat">No chats.</p>'; aiDeleteChatButton.disabled = true; } } },
+        renderMessages: () => { aiChatMessages.innerHTML = ''; if (!currentAiChat?.messages?.length) { aiChatMessages.innerHTML = '<p class="empty-chat">Ask AI...</p>'; return; } currentAiChat.messages.forEach(msg => aiChatManager.appendMessage(msg.role, msg.parts, msg.previewData)); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; },
         appendMessage: (role, parts, previewData = null) => {
             const avatar = createDOMElement('span', { className: 'ai-avatar', innerHTML: role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>' });
             const contentDiv = createDOMElement('div', { className: 'ai-message-content' });
@@ -368,28 +221,22 @@ document.addEventListener('DOMContentLoaded', () => {
               const messageText = aiChatInput.value.trim(); if (!messageText || currentAiApiCall) return;
               const apiKey = getApiKey(); if (!apiKey) { alert("Set Gemini API Key in Settings."); aiChatInput.focus(); return; }
               if (!currentAiChat) { return; }
-              let contextPrompt = `You are RyxIDE AI, a friendly and helpful coding assistant. Be conversational but concise. You are embedded in a web-based IDE.\n`;              contextPrompt += `Current Project: ${currentProject.name || 'Unnamed Project'}.\n`;
+              let contextPrompt = `You are RyxAI, a friendly and helpful coding assistant. Be conversational but concise. You are embedded in a web-based IDE.\n`;
+              contextPrompt += `Current Project: ${currentProject.name || 'Unnamed Project'}.\n`;
               let currentFileData = null;
               if (currentOpenFileId && editor) {
                   const file = currentProject.files.find(f => f.id === currentOpenFileId);
                   const model = editor.getModel();
                   if (file && model) {
                       currentFileData = file;
-                      contextPrompt += `Current File: ${file.name} (Language: ${file.language}).\n`;
+                      contextPrompt += `Current File: ${file.name} (Lang: ${file.language}).\n`;
                       const selection = editor.getSelection();
                       const selectedText = selection && !selection.isEmpty() ? model.getValueInRange(selection) : null;
-                      if (selectedText) {
-                           contextPrompt += `User has selected this code:\n\`\`\`${file.language || ''}\n${selectedText}\n\`\`\`\n`;
-                      } else {
-                           const fileContent = model.getValue() ?? file.content ?? '';
-                           if (fileContent.length < 4000) {
-                                contextPrompt += `Full Content of ${file.name}:\n\`\`\`${file.language || ''}\n${fileContent}\n\`\`\`\n`;
-                           } else { contextPrompt += `(File ${file.name} content is large, only providing selection if made).\n`; }
-                      }
+                      if (selectedText) { contextPrompt += `User has selected this code:\n\`\`\`${file.language || ''}\n${selectedText}\n\`\`\`\n`; }
+                      else { const fileContent = model?.getValue() ?? file.content ?? ''; if (fileContent.length < 4000) { contextPrompt += `Full Content of ${file.name}:\n\`\`\`${file.language || ''}\n${fileContent}\n\`\`\`\n`; } else { contextPrompt += `(File ${file.name} content large, provide selection for context).\n`; } }
                   }
               }
-              const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', ');
-              if (otherFiles) contextPrompt += `Other project files (names only): ${otherFiles}.\n`;
+              const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', '); if (otherFiles) contextPrompt += `Other project files (names only): ${otherFiles}.\n`;
               contextPrompt += `\n--- User Query ---\n${messageText}`;
               const userMsg = { role: 'user', parts: messageText }; currentAiChat.messages.push(userMsg); aiChatManager.appendMessage(userMsg.role, userMsg.parts);
               aiChatInput.value = ''; aiSendButton.disabled = true; currentAiApiCall = true; aiChatInput.disabled = true;
@@ -433,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
               hideModal(modalBackdrop, aiApplyModal); aiApplyAction = null;
          }
     };
+
     const runtimeManager = {
         loadPyodideIfNeeded: async () => { if (isPyodideReady) return true; if (isPyodideLoading) { await new Promise(r => setTimeout(r,100)); return runtimeManager.loadPyodideIfNeeded();} isPyodideLoading = true; showLoader(loaderOverlay, loaderText, "Loading Python..."); updateCredits(); try { pyodide = await window.loadPyodide(); await pyodide.loadPackage(['micropip']); console.log('Pyodide loaded.'); isPyodideReady = true; return true; } catch (e) { console.error('Pyodide Load Error:', e); outputConsole.textContent = `Error loading Python: ${e?.message||e}`; isPyodideReady=false; return false; } finally { isPyodideLoading = false; hideLoader(loaderOverlay); } },
         loadRubyVMIfNeeded: async () => { if (isRubyVMReady) return true; if (isRubyVMLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadRubyVMIfNeeded(); } if (!window.DefaultRubyVM) { outputConsole.textContent = "Error: Ruby WASM module failed."; return false; } isRubyVMLoading = true; showLoader(loaderOverlay, loaderText, "Loading Ruby VM..."); updateCredits(); try { const m = await window.DefaultRubyVM(); rubyVM = new m.RubyVM(); const printOutput=(l,msg)=>{outputConsole.textContent+=(l==='error'?'Ruby Error: ':'')+msg+'\n';}; rubyVM.printSync=printOutput; rubyVM.printlnSync=printOutput; await rubyVM.init(); console.log('Ruby VM initialized.'); isRubyVMReady = true; return true; } catch (e) { console.error('Ruby Load Error:', e); outputConsole.textContent = `Error loading Ruby: ${e?.message||e}`; rubyVM=null; isRubyVMReady=false; return false; } finally { isRubyVMLoading = false; hideLoader(loaderOverlay); } },
@@ -462,14 +310,16 @@ document.addEventListener('DOMContentLoaded', () => {
         runRubyCode: async (code) => { const ready = await runtimeManager.loadRubyVMIfNeeded(); if(!ready || !rubyVM) { updateStatus('Ruby Runtime Fail', 'error'); return; } outputConsole.textContent='Running Ruby (Exp)...\n---\n'; updateStatus('Running Ruby...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running Ruby..."); try { await rubyVM.evalAsync(code); outputConsole.textContent+='\n--- Ruby Finished ---'; updateStatus('Ruby Finished', 'success'); } catch(e){ console.error('Ruby error:', e); outputConsole.textContent+=`\n--- Ruby Error ---\n${e?.message||e}`; updateStatus('Ruby Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop=outputConsole.scrollHeight; }},
         runCSharpCode: async (code) => { const ready = await runtimeManager.loadDotnetRuntimeIfNeeded(); if (!ready || !dotnetRuntimeExports?.compileAndRunAsync) { outputConsole.textContent += "\n.NET env failed."; updateStatus('.NET Fail', 'error'); return; } outputConsole.textContent='Running C# (PoC)...\n---\n'; updateStatus('Running C#...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running C#..."); try { const result = await dotnetRuntimeExports.compileAndRunAsync(code); if (result.output?.length > 0) outputConsole.textContent += result.output.join('\n') + '\n'; if (!result.success && result.errors?.length > 0) { outputConsole.textContent += '---\nErrors:\n' + result.errors.join('\n'); updateStatus('C# Error', 'error'); } else if(result.success) updateStatus('C# Finished', 'success'); else updateStatus('C# Finished (?)', 'warning'); } catch (e) { console.error('C# WASM Error:', e); outputConsole.textContent += `\n--- C# WASM Error ---\n${e?.message||e}`; updateStatus('C# Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop = outputConsole.scrollHeight; }}
     };
+
     const editorActions = {
         find: () => { if (editor) editor.getAction('actions.find').run(); },
         replace: () => { if (editor) editor.getAction('editor.action.startFindReplaceAction').run(); },
         gotoLine: () => { if (!editor) return; const line = parseInt(gotoLineInput.value, 10); if (!isNaN(line) && line > 0) { try { const maxLine = editor.getModel()?.getLineCount() || 1; const targetLine = Math.max(1, Math.min(line, maxLine)); editor.revealLineInCenterIfOutsideViewport(targetLine, 0); editor.setPosition({ lineNumber: targetLine, column: 1 }); editor.focus(); } catch (e) { updateStatus(`Invalid line: ${line}`, 'warning');}} else if (gotoLineInput.value !== '') updateStatus('Invalid line.', 'warning'); gotoLineInput.value = ''; },
         showShortcuts: () => { showModal(modalBackdrop, shortcutsModal); }
     };
+
     function setupBaseEventListeners() {
-        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'index.html'; });
+        backToDashboardButton.addEventListener('click', () => { if (editorDirty && !confirm("Unsaved changes. Leave anyway?")) return; setCurrentProjectId(null); window.location.href = 'dashboard.html'; });
         themeSelectorHeader.addEventListener('change', (e) => { currentSettings.theme = e.target.value; saveSettings(currentSettings); applySettings(); });
         shortcutsButton.addEventListener('click', editorActions.showShortcuts);
         tabBar.addEventListener('click', handleTabSwitch);
@@ -491,6 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
     }
+
     function setupEditorSpecificEventListeners() {
         if(!editor) { return; }
         saveProjectButton.addEventListener('click', handleSaveProject);
@@ -503,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aiChatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiChatManager.handleSendMessage(); } });
         window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { if (modalBackdrop.classList.contains('modal-hidden')) { e.preventDefault(); if (!saveProjectButton.disabled) handleSaveProject(); } } });
     }
+
     function updateCredits() {
         const features = new Set(['Monaco', 'Gemini']);
         if (isPyodideReady || isPyodideLoading) features.add('Pyodide');
@@ -512,6 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
+
     function updateRunButtonState() {
          const file = currentProject?.files.find(f => f.id === currentOpenFileId);
          const lang = file?.language || 'plaintext';
@@ -527,5 +380,6 @@ document.addEventListener('DOMContentLoaded', () => {
              runExternalButton.title = `Run ${lang} in External Sandbox`;
          }
     }
+
     initializeEditorPage();
 });
