@@ -6,15 +6,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const backToDashboardButton = document.getElementById('back-to-dashboard-button');
     const themeSelector = document.getElementById('theme-selector');
     const autoSaveToggle = document.getElementById('auto-save-toggle');
-    let currentSettings = getSettings();
-    function loadSettingsDisplay() {
-        currentSettings = getSettings();
-        const key = getApiKey();
-        apiKeyInput.value = key || '';
-        updateApiKeyStatus(!!key);
-        themeSelector.value = currentSettings.theme;
-        autoSaveToggle.checked = currentSettings.autoSave;
+
+    let currentSettings = {};
+
+    async function loadSettingsDisplay() {
+        try {
+            currentSettings = await getSettings();
+            const key = await getApiKey();
+            apiKeyInput.value = key || '';
+            updateApiKeyStatus(!!key);
+            themeSelector.value = currentSettings.theme;
+            autoSaveToggle.checked = currentSettings.autoSave;
+        } catch (error) {
+            console.error("Failed to load settings:", error);
+            alert("Error loading settings display.");
+        }
     }
+
     function updateApiKeyStatus(isSet) {
          if (isSet) {
              apiKeyStatus.textContent = 'API Key is saved locally.';
@@ -24,22 +32,26 @@ document.addEventListener('DOMContentLoaded', () => {
              apiKeyStatus.className = 'status-message status-error';
          }
     }
-    function handleSaveApiKey() {
+
+    async function handleSaveApiKey() {
         const key = apiKeyInput.value.trim();
         let saved = false;
         let cleared = false;
+        const currentKey = await getApiKey();
+
         if (!key) {
-            if (getApiKey() && confirm("Are you sure you want to clear the saved API Key?")) {
-                 saved = saveApiKey('');
+            if(currentKey && confirm("Are you sure you want to clear the saved API Key?")) {
+                 saved = await saveApiKey('');
                  cleared = saved;
-            } else if (!getApiKey()) {
+            } else if (!currentKey) {
                 return;
             } else {
                  return;
             }
         } else {
-            saved = saveApiKey(key);
+            saved = await saveApiKey(key);
         }
+
         if (cleared) {
             apiKeyStatus.textContent = 'Saved API Key cleared.';
             apiKeyStatus.className = 'status-message status-warning';
@@ -52,56 +64,46 @@ document.addEventListener('DOMContentLoaded', () => {
             apiKeyStatus.className = 'status-message status-error';
         }
     }
-     function handleSaveEditorSettings() {
+
+     async function handleSaveEditorSettings() {
          currentSettings.theme = themeSelector.value;
          currentSettings.autoSave = autoSaveToggle.checked;
-         if(saveSettings(currentSettings)){
+         const saved = await saveSettings(currentSettings);
+         if (saved) {
              console.log("Editor settings saved:", currentSettings);
-             updateStatusMessage("Editor settings saved.", "success");
          }
      }
-    function handleClearAllData() {
-        if (confirm("DANGER ZONE!\n\nThis will permanently delete ALL RyxIDE projects, AI chat histories, editor settings, and your saved API key from THIS BROWSER.\n\nThis action CANNOT be undone.\n\nAre you absolutely sure you want to proceed?")) {
+
+    async function handleClearAllData() {
+        if (confirm("DANGER ZONE!\n\nDelete ALL RyxIDE data (projects, chats, settings, API key)?\n\nNO UNDO!")) {
             if (confirm("FINAL CONFIRMATION: Really delete everything?")) {
                  try {
-                     const keysToRemove = [];
-                     for (let i = 0; i < localStorage.length; i++) {
-                         const key = localStorage.key(i);
-                         if (key && key.startsWith('ryxide_')) {
-                             keysToRemove.push(key);
-                         }
-                     }
-                     let cleared = true;
-                     keysToRemove.forEach(key => {
-                         if(!safeLocalStorageRemove(key)) {
-                             cleared = false;
-                         }
-                      });
-                     if (cleared) {
-                          alert("All RyxIDE data has been successfully cleared from this browser.");
-                          loadSettingsDisplay();
-                     } else {
-                          alert("An error occurred while clearing some RyxIDE data. Please check the browser console for details.");
-                     }
+                      await clearAllStores(); // Use the new common.js function
+                      alert("All RyxIDE data has been cleared from this browser.");
+                      await loadSettingsDisplay();
                  } catch (e) {
-                     console.error("Error during bulk data clearing:", e);
-                     alert("An unexpected error occurred while clearing data.");
+                      console.error("Error clearing data:", e);
+                      alert("An error occurred while clearing data.");
                  }
              }
         }
     }
+
     function setupEventListeners() {
         saveApiKeyButton.addEventListener('click', handleSaveApiKey);
         clearAllDataButton.addEventListener('click', handleClearAllData);
-        backToDashboardButton.addEventListener('click', () => {
-            window.location.href = 'index.html';
-        });
+        backToDashboardButton.addEventListener('click', () => { window.location.href = 'index.html'; }); // Updated link
         themeSelector.addEventListener('change', handleSaveEditorSettings);
         autoSaveToggle.addEventListener('change', handleSaveEditorSettings);
     }
-    function init() {
-        loadSettingsDisplay();
+
+    async function init() {
+        await loadSettingsDisplay();
         setupEventListeners();
     }
-    init();
+
+    init().catch(err => {
+         console.error("Settings Initialization failed:", err);
+         alert("Failed to initialize the settings page.");
+    });
 });
