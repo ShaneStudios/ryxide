@@ -17,52 +17,32 @@
              <header>
                  <h1><i class="fas fa-cog"></i> RyxIDE Settings</h1>
                  <div class="header-controls">
-                     <button id="back-to-dashboard-button" class="header-button" title="Back to Dashboard"><i class="fas fa-arrow-left"></i> Dashboard</button>
+                     <a href="index.html" id="back-to-dashboard-button" class="header-button" title="Back to Dashboard"><i class="fas fa-arrow-left"></i> Dashboard</a>
                  </div>
              </header>
              <main id="settings-content">
                  <section class="settings-group">
-                     <h2><i class="fas fa-paint-brush"></i> Editor Appearance & Behavior</h2>
-                     <div class="setting-item">
-                         <label for="theme-selector">Theme:</label>
-                         <select id="theme-selector">
-                             <option value="vs-dark">Dark Theme (Default)</option>
-                             <option value="vs">Light Theme</option>
-                         </select>
-                     </div>
-                     <div class="setting-item">
-                         <label for="auto-save-toggle" class="checkbox-label">
-                             <input type="checkbox" id="auto-save-toggle"> Enable Auto-Save
-                         </label>
-                         <p class="setting-description">Automatically save project changes ~1.5 seconds after you stop typing in the editor.</p>
-                     </div>
+                     <h2><i class="fas fa-paint-brush"></i> Editor</h2>
+                     <div class="setting-item"> <label for="theme-selector">Theme:</label> <select id="theme-selector"> <option value="vs-dark">Dark (Default)</option> <option value="vs">Light</option> </select> </div>
+                     <div class="setting-item"> <label for="auto-save-toggle" class="checkbox-label"> <input type="checkbox" id="auto-save-toggle"> Enable Auto-Save </label> <p class="setting-description">Save changes ~1.5s after typing stops.</p> </div>
                  </section>
                  <section class="settings-group">
-                      <h2><i class="fas fa-robot"></i> AI Configuration (Google Gemini)</h2>
-                      <p class="warning">
-                          <strong><i class="fas fa-exclamation-triangle"></i> Security Warning:</strong> Your API key is stored locally in your browser's storage (<code>localStorage</code>). While convenient for this client-side app, it is <strong>not cryptographically secure</strong>. Anyone with access to your browser's developer tools on this site could potentially view the key. Use API keys with appropriate restrictions (e.g., client-side usage limits, no billing enabled if possible) and understand the risk.
-                      </p>
-                      <div class="setting-item api-key-item">
-                         <label for="gemini-api-key-input">API Key:</label>
-                         <input type="password" id="gemini-api-key-input" placeholder="Enter your Gemini API Key">
-                         <button id="save-api-key-button" class="primary"><i class="fas fa-save"></i> Save Key</button>
-                      </div>
+                      <h2><i class="fas fa-robot"></i> AI (Gemini)</h2>
+                      <p class="warning"> <strong><i class="fas fa-exclamation-triangle"></i> Security:</strong> API key is stored locally. Use restricted keys.</p>
+                      <div class="setting-item api-key-item"> <label for="gemini-api-key-input">API Key:</label> <input type="password" id="gemini-api-key-input" placeholder="Enter Gemini API Key"> <button id="save-api-key-button" class="primary"><i class="fas fa-save"></i> Save Key</button> </div>
                       <p id="api-key-status" class="status-message"></p>
-                      <p>You can obtain an API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio <i class="fas fa-external-link-alt"></i></a>.</p>
+                      <p>Get key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio <i class="fas fa-external-link-alt"></i></a>.</p>
                  </section>
-
                  <section class="settings-group">
-                      <h2><i class="fas fa-database"></i> Storage Management</h2>
-                      <div class="setting-item">
-                          <p>All RyxIDE data (projects, AI chat histories, editor settings, API key) is stored locally in this browser only.</p>
-                          <button id="clear-all-data-button" class="danger"><i class="fas fa-trash-alt"></i> Clear All Local RyxIDE Data</button>
-                          <p class="setting-description warning"><strong><i class="fas fa-exclamation-triangle"></i> Warning:</strong> This action is permanent and cannot be undone! It will delete everything related to RyxIDE from this browser's storage.</p>
-                      </div>
+                      <h2><i class="fas fa-database"></i> Storage</h2>
+                      <div class="setting-item"> <p>Data stored locally in this browser.</p> <button id="clear-all-data-button" class="danger"><i class="fas fa-trash-alt"></i> Clear All Local Data</button> <p class="setting-description warning"><strong><i class="fas fa-exclamation-triangle"></i> Warning:</strong> Permanent! Deletes projects, chats, settings, API key!</p> </div>
                  </section>
-
              </main>
               <footer>
-                 <p>RyxIDE by <a href="https://github.com/ShaneStudios/" target="_blank" rel="noopener noreferrer">Shane Studios</a>. <strong>STILL UNDER CONSTRUCTION</strong></p>
+                 <p>RyxIDE by <a href="https://github.com/ShaneStudios/" target="_blank" rel="noopener noreferrer">Shane Studios</a>.
+                   | <a href="changelog.html">Changelog</a>
+                   | <a href="credits.html">Credits</a>
+                 </p>
              </footer>
         </div>
     </div>
