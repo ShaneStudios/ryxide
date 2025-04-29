@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const runExternalButton = document.getElementById('run-external-button');
     const previewFrame = document.getElementById('preview-frame');
     const terminalContainer = document.getElementById('terminal-container');
-    const outputConsole = document.getElementById('output-console'); // Keep ref even if hidden
+    const outputConsole = document.getElementById('output-console');
     const loaderOverlay = document.getElementById('loader-overlay');
     const loaderText = document.getElementById('loader-text');
     const creditsElement = document.getElementById('credits');
@@ -59,7 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let aiApplyAction = null;
     let currentSettings = {};
     let autoSaveTimeout = null;
-
     let v86Emulator = null;
     let xtermInstance = null;
     let xtermFitAddon = null;
@@ -78,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         setupMonaco();
-        runtimeManager.initializeTerminalAndVM(); // <<<<< CORRECTED CALL HERE
+        runtimeManager.initializeTerminalAndVM();
     }
 
     function handleMissingProject(message) {
@@ -88,29 +87,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function ensureProjectIntegrity() {
-         if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
-             const defaultChatId = generateUUID();
-             currentProject.aiChats = [{ id: defaultChatId, name: 'Chat 1', messages: [], createdAt: Date.now() }];
-             currentProject.currentAiChatId = defaultChatId;
-         }
-          if (!currentProject.currentAiChatId || !currentProject.aiChats.find(c => c.id === currentProject.currentAiChatId)) {
-              currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null;
-          }
+         if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) { const defaultChatId = generateUUID(); currentProject.aiChats = [{ id: defaultChatId, name: 'Chat 1', messages: [], createdAt: Date.now() }]; currentProject.currentAiChatId = defaultChatId; }
+          if (!currentProject.currentAiChatId || !currentProject.aiChats.find(c => c.id === currentProject.currentAiChatId)) { currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null; }
           currentProject.aiChats.forEach(chat => { if (!chat.messages) chat.messages = []; chat.messages = chat.messages.filter(msg => msg && msg.role && msg.parts); });
     }
 
     function postMonacoSetup() {
          currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
          fileManager.renderList();
-         if (currentOpenFileId) {
-              fileManager.open(currentOpenFileId, true);
-         } else {
-              updateRunButtonState();
-              if (editor) {
-                  editor.setValue("// Welcome to RyxIDE!\n// Select or create a file from the left pane.");
-                  monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
-              }
-         }
+         if (currentOpenFileId) { fileManager.open(currentOpenFileId, true); }
+         else { updateRunButtonState(); if (editor) { editor.setValue("// Welcome!"); monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); } }
          aiChatManager.loadChats();
          applySettings();
          setEditorDirty(false);
@@ -119,28 +105,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
      function applySettings() {
-        if (editor) {
-            monaco.editor.setTheme(currentSettings.theme);
-            editor.updateOptions({
-                 fontSize: currentSettings.fontSize || 14,
-                 tabSize: currentSettings.tabSize || 4,
-                 renderWhitespace: currentSettings.renderWhitespace || 'none',
-                 wordWrap: currentSettings.wordWrap || 'on'
-            });
-        }
+        if (editor) { monaco.editor.setTheme(currentSettings.theme); editor.updateOptions({ fontSize: currentSettings.fontSize || 14, tabSize: currentSettings.tabSize || 4, renderWhitespace: currentSettings.renderWhitespace || 'none', wordWrap: currentSettings.wordWrap || 'on' }); }
         themeSelectorHeader.value = currentSettings.theme;
         if(xtermInstance) { xtermInstance.setOption('theme', getXtermTheme(currentSettings.theme)); }
     }
 
     function getXtermTheme(editorTheme) {
-        return editorTheme === 'vs' ?
-         { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff', selectionForeground: '#000000' } :
-         { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78', selectionForeground: '#ffffff' };
+        return editorTheme === 'vs' ? { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff', selectionForeground: '#000000' } : { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78', selectionForeground: '#ffffff' };
     }
 
     function setupMonaco() {
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' }});
-        window.MonacoEnvironment = { getWorkerUrl: function (moduleId, label) { const workerMap = { 'editorWorkerService': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.worker.js', 'css': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/css/css.worker.js', 'html': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/html/html.worker.js', 'json': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/json/json.worker.js', 'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js', 'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js' }; const workerSrc = workerMap[label] || workerMap.editorWorkerService; return `data:text/javascript;charset=utf-8,${encodeURIComponent(` self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' }; importScripts('${workerSrc}');` )}`; } };
+        window.MonacoEnvironment = { getWorkerUrl: function (moduleId, label) {
+            const workerMap = { 'editorWorkerService': 'vs/editor/editor.worker.js', 'css': 'vs/language/css/css.worker.js', 'html': 'vs/language/html/html.worker.js', 'json': 'vs/language/json/json.worker.js', 'typescript': 'vs/language/typescript/ts.worker.js', 'javascript': 'vs/language/typescript/ts.worker.js' };
+            const workerBase = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/';
+            const workerPath = workerMap[label] || workerMap.editorWorkerService;
+
+            return `${workerBase}${workerPath}`;
+        }};
         require(['vs/editor/editor.main'], function() {
             try {
                  editor = monaco.editor.create(editorContainer, { theme: currentSettings.theme, automaticLayout: true, minimap: { enabled: true }, wordWrap: 'on', contextmenu: true, fontSize: 14, scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }, });
@@ -196,38 +178,32 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoader(loaderOverlay, loaderText, "Booting Linux VM...");
             updateStatus("Booting v86 Linux environment...", "info", 0);
             updateCredits();
-
             try {
                 xtermInstance = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), rows: 20 });
                 xtermFitAddon = new FitAddon.FitAddon();
                 xtermInstance.loadAddon(xtermFitAddon);
                 xtermInstance.open(terminalContainer);
                 xtermFitAddon.fit();
-
-                const V86_WASM_PATH = "https://cdn.jsdelivr.net/npm/v86@0.3.1/build/v86.wasm";
+                const V86_WASM_PATH = "https://cdn.jsdelivr.net/npm/v86/build/v86.wasm";
                 const V86_LINUX_IMAGE_URL = "https://cdn.jsdelivr.net/gh/ShaneStudios/RyxIDE-images@main/images/basiclinux.iso";
-
                 v86Emulator = new V86Starter({ wasm_path: V86_WASM_PATH, memory_size: 512 * 1024 * 1024, vga_memory_size: 8 * 1024 * 1024, cdrom: { url: V86_LINUX_IMAGE_URL, async: true }, autostart: true, disable_keyboard: true, disable_mouse: true, screen_container: null, });
-
                 v86Emulator.add_listener("serial0-output-byte", (byte) => { xtermInstance?.write(new Uint8Array([byte])); });
                 xtermInstance.onData((data) => { v86Emulator?.serial0_send(data); });
-
                 v86Emulator.add_listener("emulator-ready", () => { isV86Ready = true; isV86Loading = false; hideLoader(loaderOverlay); updateStatus("Linux environment ready.", "success"); updateCredits(); updateRunButtonState(); xtermInstance?.focus(); });
                 v86Emulator.add_listener("emulator-stopped", () => { isV86Ready = false; isV86Loading = false; v86Emulator = null; xtermInstance?.dispose(); xtermInstance = null; updateStatus("Linux environment stopped.", "warning"); alert("VM stopped."); updateRunButtonState(); updateCredits(); });
                 v86Emulator.add_listener("emulator-error", (error) => { console.error("v86 Error:", error); isV86Ready = false; isV86Loading = false; v86Emulator = null; xtermInstance?.dispose(); xtermInstance = null; hideLoader(loaderOverlay); updateStatus("VM Error!", "error"); alert(`VM error: ${error?.message || error}.`); updateRunButtonState(); updateCredits(); });
-
             } catch (error) { console.error("Terminal/VM Init Error:", error); terminalContainer.textContent = `Error: ${error.message}`; isV86Loading = false; hideLoader(loaderOverlay); updateStatus("Terminal/VM Init Failed!", "error"); }
         },
         runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (!isV86Ready || !v86Emulator) { if (!isV86Loading) { await runtimeManager.initializeTerminalAndVM(); if(!isV86Ready) { alert("Linux env not ready."); return; } } else { alert("Linux env booting."); return; } } updateStatus(`Running ${lang} in v86...`, 'info', 0); showLoader(loaderOverlay, loaderText, `Running ${lang}...`); xtermInstance?.focus(); runtimeManager.runInV86(lang, code); },
         runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
-        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { outputConsole.textContent = "Current file is not HTML."; updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); outputConsole.textContent = `Preview Error: ${e.message}`; updateStatus('Preview failed', 'error'); } },
+        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
         runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
         runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (!outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
         runPythonCode: async (code) => { runtimeManager.runInV86('python', code); },
         runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
         runRubyCode: async (code) => { runtimeManager.runInV86('ruby', code); },
         runCSharpCode: async (code) => { runtimeManager.runInV86('csharp', code); },
-        runInV86: async (lang, code) => { if (!isV86Ready || !v86Emulator) { if (!isV86Loading) { await runtimeManager.initializeTerminalAndVM(); if(!isV86Ready) { alert("Linux env not ready."); return; } } else { alert("Linux env booting."); return; } } updateStatus(`Running ${lang} in v86...`, 'info', 0); showLoader(loaderOverlay, loaderText, `Running ${lang}...`); xtermInstance?.focus(); const extensionMap = { python: 'py', ruby: 'rb', csharp: 'cs', c: 'c', cpp: 'cpp', javascript: 'js', shell: 'sh' }; const tempFileName = `ryx_temp.${extensionMap[lang] || 'tmp'}`; const tempFilePath = `/tmp/${tempFileName}`; const executeCommandMap = { python: `python3 ${tempFilePath}\n`, ruby: `ruby ${tempFilePath}\n`, c: `gcc ${tempFilePath} -o /tmp/ryx_c_bin && /tmp/ryx_c_bin\n`, cpp: `g++ ${tempFilePath} -o /tmp/ryx_cpp_bin && /tmp/ryx_cpp_bin\n`, csharp: `mcs ${tempFilePath} -out:/tmp/ryx_cs_bin.exe && mono /tmp/ryx_cs_bin.exe\n`, shell: `sh ${tempFilePath}\n`}; const executeCommand = executeCommandMap[lang]; if(!executeCommand){ updateStatus(`v86 execution for ${lang} not configured.`, 'warning'); hideLoader(loaderOverlay); return; } try { const safeCode = btoa(unescape(encodeURIComponent(code))); const writeCommand = `echo '${safeCode}' | base64 -d > ${tempFilePath}\n`; v86Emulator.serial0_send('stty -echo\n'); v86Emulator.serial0_send(`mkdir -p /tmp\n`); v86Emulator.serial0_send(writeCommand); await new Promise(resolve => setTimeout(resolve, 150)); v86Emulator.serial0_send(executeCommand); v86Emulator.serial0_send(`exit_code=$?; echo; echo "[RyxIDE: ${lang} finished | Exit code: $exit_code]"\n`); v86Emulator.serial0_send('stty echo\n'); updateStatus(`${lang} sent to v86.`, 'info'); } catch(e) { updateStatus(`Error running ${lang}.`, 'error'); } finally { hideLoader(loaderOverlay); } }
+        runInV86: async (lang, code) => { if (!isV86Ready || !v86Emulator) { if (!isV86Loading) { await runtimeManager.initializeTerminalAndVM(); if(!isV86Ready) { alert("Linux env not ready."); return; } } else { alert("Linux env booting."); return; } } updateStatus(`Running ${lang} in v86...`, 'info', 0); showLoader(loaderOverlay, loaderText, `Running ${lang}...`); xtermInstance?.focus(); const extensionMap = { python: 'py', ruby: 'rb', csharp: 'cs', c: 'c', cpp: 'cpp', javascript: 'js', shell: 'sh' }; const tempFileName = `ryx_temp.${extensionMap[lang] || 'tmp'}`; const tempFilePath = `/tmp/${tempFileName}`; const executeCommandMap = { python: `python3 ${tempFilePath}\n`, ruby: `ruby ${tempFilePath}\n`, c: `gcc ${tempFilePath} -o /tmp/ryx_c_bin -lm && /tmp/ryx_c_bin\n`, cpp: `g++ ${tempFilePath} -o /tmp/ryx_cpp_bin -lstdc++ && /tmp/ryx_cpp_bin\n`, csharp: `mcs ${tempFilePath} -out:/tmp/ryx_cs_bin.exe && mono /tmp/ryx_cs_bin.exe\n`, shell: `sh ${tempFilePath}\n`}; const executeCommand = executeCommandMap[lang]; if(!executeCommand){ updateStatus(`v86 execution for ${lang} not configured.`, 'warning'); hideLoader(loaderOverlay); return; } try { const safeCode = btoa(unescape(encodeURIComponent(code))); const writeCommand = `echo '${safeCode}' | base64 -d > ${tempFilePath}\n`; v86Emulator.serial0_send('stty -echo\n'); v86Emulator.serial0_send(`mkdir -p /tmp\n`); v86Emulator.serial0_send(writeCommand); await new Promise(resolve => setTimeout(resolve, 150)); v86Emulator.serial0_send(executeCommand); v86Emulator.serial0_send(`exit_code=$?; echo; echo "[RyxIDE:${lang}:$exit_code]"\n`); v86Emulator.serial0_send('stty echo\n'); updateStatus(`${lang} sent to v86.`, 'info'); } catch(e) { updateStatus(`Error running ${lang}.`, 'error'); } finally { hideLoader(loaderOverlay); } }
     };
 
     const editorActions = {
