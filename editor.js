@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const runButton = document.getElementById('run-button');
     const runExternalButton = document.getElementById('run-external-button');
     const previewFrame = document.getElementById('preview-frame');
+    const terminalContainer = document.getElementById('terminal-container');
     const outputConsole = document.getElementById('output-console');
     const loaderOverlay = document.getElementById('loader-overlay');
     const loaderText = document.getElementById('loader-text');
@@ -58,9 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let aiApplyAction = null;
     let currentSettings = {};
     let autoSaveTimeout = null;
-    let pyodide = null, isPyodideLoading = false, isPyodideReady = false;
-    let rubyVM = null, isRubyVMLoading = false, isRubyVMReady = false;
-    let isDotnetRuntimeLoading = false, isDotnetRuntimeReady = false, dotnetRuntimeExports = null;
+
+    let v86Emulator = null;
+    let xtermInstance = null;
+    let xtermFitAddon = null;
+    let isV86Ready = false;
+    let isV86Loading = false;
 
     async function initializeEditorPage() {
         const projectId = await getCurrentProjectId();
@@ -74,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         setupMonaco();
+        initializeTerminalAndVM();
     }
 
     function handleMissingProject(message) {
@@ -110,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
          applySettings();
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
+         if (xtermFitAddon) { setTimeout(() => xtermFitAddon.fit(), 100); }
     }
 
      function applySettings() {
@@ -123,17 +129,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         themeSelectorHeader.value = currentSettings.theme;
+        if(xtermInstance) { xtermInstance.setOption('theme', getXtermTheme(currentSettings.theme)); }
+    }
+
+    function getXtermTheme(editorTheme) {
+        return editorTheme === 'vs' ?
+         { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff' } :
+         { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78' };
     }
 
     function setupMonaco() {
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' }});
-        window.MonacoEnvironment = {
-            getWorkerUrl: function (moduleId, label) {
-                const workerMap = { 'editorWorkerService': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.worker.js', 'css': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/css/css.worker.js', 'html': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/html/html.worker.js', 'json': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/json/json.worker.js', 'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js', 'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js' };
-                const workerSrc = workerMap[label] || workerMap.editorWorkerService;
-                return `data:text/javascript;charset=utf-8,${encodeURIComponent(` self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' }; importScripts('${workerSrc}');` )}`;
-            }
-        };
+        window.MonacoEnvironment = { getWorkerUrl: function (moduleId, label) { const workerMap = { 'editorWorkerService': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.worker.js', 'css': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/css/css.worker.js', 'html': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/html/html.worker.js', 'json': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/json/json.worker.js', 'typescript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js', 'javascript': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/language/typescript/ts.worker.js' }; const workerSrc = workerMap[label] || workerMap.editorWorkerService; return `data:text/javascript;charset=utf-8,${encodeURIComponent(` self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/' }; importScripts('${workerSrc}');` )}`; } };
         require(['vs/editor/editor.main'], function() {
             try {
                  editor = monaco.editor.create(editorContainer, { theme: currentSettings.theme, automaticLayout: true, minimap: { enabled: true }, wordWrap: 'on', contextmenu: true, fontSize: 14, scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }, });
@@ -143,43 +150,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }, function(error) { console.error("Monaco Load Error:", error); editorContainer.textContent = `Editor Load Error. Check connection/console. Error: ${error}`; disableEditorFeatures(); });
     }
 
-    function disableEditorFeatures(){
-         saveProjectButton.disabled = true; runButton.disabled = true; runExternalButton.style.display = 'none'; findButton.disabled = true;
-         replaceButton.disabled = true; gotoLineButton.disabled = true; gotoLineInput.disabled = true; renameFileButton.disabled = true; deleteFileButton.disabled = true;
-         aiSendButton.disabled = true; aiChatInput.disabled = true;
-    }
-
-    function setupEditorKeybindings() {
-         if (!editor) return; editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible'); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run()); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run());
-    }
-
-    function setupMonacoCompletions() {
-         if (!window.monaco) { return; } monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true });
-         monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'clog', detail: 'console.log()', kind: 17, insertText: 'console.log($1);', insertTextRules: 4, range: range }, { label: 'fun', detail: 'function', kind: 17, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'forloop', detail:'for loop', kind: 17, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'timeout', detail: 'setTimeout', kind: 17, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: 4, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', kind: 17, insertText: 'print(f"$1")', insertTextRules: 4, range: range }, { label: 'def', detail:'def function', kind: 17, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: 4, range: range }, { label: 'class', detail:'class definition', kind: 17, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: 4, range: range }] }; }});
-         monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', kind: 17, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: 4, range: range }, { label: 'div', detail:'<div> element', kind: 17, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: 4, range: range }, { label: 'canvas', detail:'<canvas> element', kind: 17, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: 4, range: range }] }; }});
-    }
-
-    function setEditorDirty(isDirty) {
-        if (!currentOpenFileId && isDirty) isDirty = false; if (editorDirty === isDirty) return;
-        editorDirty = isDirty; saveProjectButton.disabled = !isDirty;
-        statusIndicator.textContent = isDirty ? '* Unsaved Changes' : ''; statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
-        document.title = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`;
-    }
-
-    function updateStatus(message, type = 'info', duration = 3000) {
-         statusIndicator.textContent = message; statusIndicator.className = `status-indicator status-${type}`;
-         if (duration > 0) { setTimeout(() => { if (!editorDirty && statusIndicator.textContent === message) { statusIndicator.textContent = ''; statusIndicator.className = 'status-indicator'; } }, duration); }
-    }
-
-    async function handleSaveProject() {
-        if (!currentProject || !editor) { return; }
-        if (currentOpenFileId) { const file = currentProject.files.find(f => f.id === currentOpenFileId); if (file) { file.content = editor.getValue(); } else { updateStatus('Error: Open file data missing!', 'error', 5000); return; } }
-        const saved = await saveProjectToStorage(currentProject);
-        if(saved) { setEditorDirty(false); updateStatus(`Project saved.`, 'success'); }
-        else { updateStatus('Error Saving Project!', 'error', 5000); }
-    }
-
+    function disableEditorFeatures(){ saveProjectButton.disabled = true; runButton.disabled = true; runExternalButton.style.display = 'none'; findButton.disabled = true; replaceButton.disabled = true; gotoLineButton.disabled = true; gotoLineInput.disabled = true; renameFileButton.disabled = true; deleteFileButton.disabled = true; aiSendButton.disabled = true; aiChatInput.disabled = true; }
+    function setupEditorKeybindings() { if (!editor) return; editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible'); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run()); editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => editor.getAction('editor.action.startFindReplaceAction').run()); }
+    function setupMonacoCompletions() { if (!window.monaco) { return; } monaco.languages.typescript.javascriptDefaults.setCompilerOptions({ target: monaco.languages.typescript.ScriptTarget.ES2016, allowNonTsExtensions: true }); monaco.languages.registerCompletionItemProvider('javascript', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'clog', detail: 'console.log()', kind: 17, insertText: 'console.log($1);', insertTextRules: 4, range: range }, { label: 'fun', detail: 'function', kind: 17, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'forloop', detail:'for loop', kind: 17, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: 4, range: range }, { label: 'timeout', detail: 'setTimeout', kind: 17, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: 4, range: range }] }; }}); monaco.languages.registerCompletionItemProvider('python', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'fprint', detail: 'print(f"...")', kind: 17, insertText: 'print(f"$1")', insertTextRules: 4, range: range }, { label: 'def', detail:'def function', kind: 17, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: 4, range: range }, { label: 'class', detail:'class definition', kind: 17, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: 4, range: range }] }; }}); monaco.languages.registerCompletionItemProvider('html', { provideCompletionItems: (model, position) => { const word=model.getWordUntilPosition(position); const range={startLineNumber:position.lineNumber,endLineNumber:position.lineNumber,startColumn:word.startColumn,endColumn:word.endColumn}; return { suggestions: [ { label: 'html5', detail: 'HTML5 Boilerplate', kind: 17, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: 4, range: range }, { label: 'div', detail:'<div> element', kind: 17, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: 4, range: range }, { label: 'canvas', detail:'<canvas> element', kind: 17, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: 4, range: range }] }; }}); }
+    function setEditorDirty(isDirty) { if (!currentOpenFileId && isDirty) isDirty = false; if (editorDirty === isDirty) return; editorDirty = isDirty; saveProjectButton.disabled = !isDirty; statusIndicator.textContent = isDirty ? '* Unsaved Changes' : ''; statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator'; document.title = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`; }
+    function updateStatus(message, type = 'info', duration = 3000) { statusIndicator.textContent = message; statusIndicator.className = `status-indicator status-${type}`; if (duration > 0) { setTimeout(() => { if (!editorDirty && statusIndicator.textContent === message) { statusIndicator.textContent = ''; statusIndicator.className = 'status-indicator'; } }, duration); } }
+    async function handleSaveProject() { if (!currentProject || !editor) { return; } if (currentOpenFileId) { const file = currentProject.files.find(f => f.id === currentOpenFileId); if (file) { file.content = editor.getValue(); } else { updateStatus('Error: Open file data missing!', 'error', 5000); return; } } const saved = await saveProjectToStorage(currentProject); if(saved) { setEditorDirty(false); updateStatus(`Project saved.`, 'success'); } else { updateStatus('Error Saving Project!', 'error', 5000); } }
     function handleAutoSave() { if (!currentSettings.autoSave || !editorDirty) return; clearTimeout(autoSaveTimeout); autoSaveTimeout = setTimeout(handleSaveProject, 1500); }
 
     const fileManager = {
@@ -196,7 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleTabSwitch(event) {
          const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
          tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
-         if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); } else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
+         else if (tabName === 'terminal' && xtermInstance) { setTimeout(() => xtermFitAddon?.fit(), 0); xtermInstance.focus(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
 
     const aiChatManager = {
@@ -212,17 +189,46 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const runtimeManager = {
-        loadPyodideIfNeeded: async () => { if (isPyodideReady) return true; if (isPyodideLoading) { await new Promise(r => setTimeout(r,100)); return runtimeManager.loadPyodideIfNeeded();} isPyodideLoading = true; showLoader(loaderOverlay, loaderText, "Loading Python..."); updateCredits(); try { pyodide = await window.loadPyodide(); await pyodide.loadPackage(['micropip']); console.log('Pyodide loaded.'); isPyodideReady = true; return true; } catch (e) { console.error('Pyodide Load Error:', e); outputConsole.textContent = `Error loading Python: ${e?.message||e}`; isPyodideReady=false; return false; } finally { isPyodideLoading = false; hideLoader(loaderOverlay); } },
-        loadRubyVMIfNeeded: async () => { if (isRubyVMReady) return true; if (isRubyVMLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadRubyVMIfNeeded(); } if (!window.DefaultRubyVM) { outputConsole.textContent = "Error: Ruby WASM module failed."; return false; } isRubyVMLoading = true; showLoader(loaderOverlay, loaderText, "Loading Ruby VM..."); updateCredits(); try { const m = await window.DefaultRubyVM(); rubyVM = new m.RubyVM(); const printOutput=(l,msg)=>{outputConsole.textContent+=(l==='error'?'Ruby Error: ':'')+msg+'\n';}; rubyVM.printSync=printOutput; rubyVM.printlnSync=printOutput; await rubyVM.init(); console.log('Ruby VM initialized.'); isRubyVMReady = true; return true; } catch (e) { console.error('Ruby Load Error:', e); outputConsole.textContent = `Error loading Ruby: ${e?.message||e}`; rubyVM=null; isRubyVMReady=false; return false; } finally { isRubyVMLoading = false; hideLoader(loaderOverlay); } },
-        loadDotnetRuntimeIfNeeded: async () => { if (isDotnetRuntimeReady) return true; if (isDotnetRuntimeLoading) { await new Promise(r=>setTimeout(r,100)); return runtimeManager.loadDotnetRuntimeIfNeeded(); } if (typeof dotnet === 'undefined' || typeof dotnet.create !== 'function') { outputConsole.textContent = "Error: .NET WASM runtime script not found."; return false; } isDotnetRuntimeLoading = true; showLoader(loaderOverlay, loaderText, "Loading .NET Runtime (Exp)..."); updateCredits(); try { const { getAssemblyExports } = await dotnet.create(); dotnetRuntimeExports = { compileAndRunAsync: async (c) => { outputConsole.textContent += "-- Simulating C# Run --\n"; await new Promise(r=>setTimeout(r,1500)); const o=[], e=[]; if(c.includes("Hello"))o.push("Hello RyxIDE!"); if(c.includes("error"))e.push("Simulated Error."); return { success:e.length===0, errors:e, output:o }; } }; console.log('.NET Runtime Initialized (Simulated).'); isDotnetRuntimeReady = true; return true; } catch (e) { console.error('.NET Load Error:', e); outputConsole.textContent = `Error loading .NET: ${e.message}`; dotnetRuntimeExports=null; isDotnetRuntimeReady=false; return false; } finally { isDotnetRuntimeLoading = false; hideLoader(loaderOverlay); } },
-        runCode: () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); outputConsole.textContent = ''; previewFrame.srcdoc = ''; updateStatus(`Running ${file.language}...`, 'info', 0); switch (file.language) { case 'html': runtimeManager.runHtmlPreview(); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'css': runtimeManager.runCssPreview(code); break; case 'python': runtimeManager.runPythonCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; case 'ruby': runtimeManager.runRubyCode(code); break; case 'csharp': runtimeManager.runCSharpCode(code); break; case 'java': case 'cpp': case 'c': case 'rust': case 'go': case 'php': outputConsole.textContent = `Use 'Run Externally' button for ${file.language}.`; updateStatus(`${file.language} needs external run.`, 'warning', 5000); break; default: outputConsole.textContent = `Run not configured for ${file.language}`; updateStatus(`Cannot run ${file.language}.`, 'info'); break; } },
-        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { outputConsole.textContent = "Current file is not HTML."; updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; outputConsole.textContent = 'HTML preview rendered.'; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); outputConsole.textContent = `Preview Error: ${e.message}`; updateStatus('Preview failed', 'error'); } },
-        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>Heading</h1><p>Paragraph</p><button class="primary">Button</button></body></html>`; previewFrame.srcdoc = cssHtml; outputConsole.textContent = 'CSS preview.'; updateStatus('Preview Ready', 'success');},
-        runJavaScriptCode: (code) => { outputConsole.textContent = 'Running JS...\n---\n'; updateStatus('Running JS...', 'info', 0); const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (!outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
-        runPythonCode: async (code) => { const BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run'; if (!BACKEND_URL || BACKEND_URL === 'YOUR_RENDER_SERVICE_URL_HERE/run') { outputConsole.textContent = "Backend URL not configured."; updateStatus('Python Backend Error', 'error'); return; } outputConsole.textContent = 'Sending Python code to backend...\n---\n'; updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); try { const response = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); if (!response.ok) { let errorDetails = `HTTP Error ${response.status}: ${response.statusText}`; try { const errorJson = await response.json(); errorDetails += `\nBackend says: ${errorJson.error || JSON.stringify(errorJson)}`; } catch (jsonError) {} throw new Error(errorDetails); } const result = await response.json(); if (result.stdout) outputConsole.textContent += result.stdout; if (result.stderr) outputConsole.textContent += `\n--- STDERR ---\n${result.stderr}`; if (result.exit_code === 0) { outputConsole.textContent += '\n--- Python execution finished (Backend) ---'; updateStatus('Python Finished', 'success'); } else { outputConsole.textContent += `\n--- Python execution failed (Backend) --- Exit Code: ${result.exit_code}`; updateStatus('Python Error', 'error'); } } catch (error) { console.error('Error running Python code via backend:', error); outputConsole.textContent += `\n--- ERROR ---\nFailed to execute code: ${error.message}`; updateStatus('Python Network/Backend Error', 'error', 5000); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop = outputConsole.scrollHeight; } },
-        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; outputConsole.textContent='Markdown rendered.'; updateStatus('MD Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
-        runRubyCode: async (code) => { const ready = await runtimeManager.loadRubyVMIfNeeded(); if(!ready || !rubyVM) { updateStatus('Ruby Runtime Fail', 'error'); return; } outputConsole.textContent='Running Ruby (Exp)...\n---\n'; updateStatus('Running Ruby...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running Ruby..."); try { await rubyVM.evalAsync(code); outputConsole.textContent+='\n--- Ruby Finished ---'; updateStatus('Ruby Finished', 'success'); } catch(e){ console.error('Ruby error:', e); outputConsole.textContent+=`\n--- Ruby Error ---\n${e?.message||e}`; updateStatus('Ruby Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop=outputConsole.scrollHeight; }},
-        runCSharpCode: async (code) => { const ready = await runtimeManager.loadDotnetRuntimeIfNeeded(); if (!ready || !dotnetRuntimeExports?.compileAndRunAsync) { outputConsole.textContent += "\n.NET env failed."; updateStatus('.NET Fail', 'error'); return; } outputConsole.textContent='Running C# (PoC)...\n---\n'; updateStatus('Running C#...', 'info', 0); showLoader(loaderOverlay, loaderText, "Running C#..."); try { const result = await dotnetRuntimeExports.compileAndRunAsync(code); if (result.output?.length > 0) outputConsole.textContent += result.output.join('\n') + '\n'; if (!result.success && result.errors?.length > 0) { outputConsole.textContent += '---\nErrors:\n' + result.errors.join('\n'); updateStatus('C# Error', 'error'); } else if(result.success) updateStatus('C# Finished', 'success'); else updateStatus('C# Finished (?)', 'warning'); } catch (e) { console.error('C# WASM Error:', e); outputConsole.textContent += `\n--- C# WASM Error ---\n${e?.message||e}`; updateStatus('C# Error', 'error'); } finally { hideLoader(loaderOverlay); outputConsole.scrollTop = outputConsole.scrollHeight; }}
+        v86IsBooting: false,
+        initializeTerminalAndVM: async () => {
+            if (isV86Ready || isV86Loading) return;
+            isV86Loading = true;
+            showLoader(loaderOverlay, loaderText, "Booting Linux VM...");
+            updateStatus("Booting v86 Linux environment...", "info", 0);
+            updateCredits();
+
+            try {
+                xtermInstance = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), rows: 20 });
+                xtermFitAddon = new FitAddon.FitAddon();
+                xtermInstance.loadAddon(xtermFitAddon);
+                xtermInstance.open(terminalContainer);
+                xtermFitAddon.fit();
+
+                const V86_WASM_PATH = "https://cdn.jsdelivr.net/npm/v86@0.3.1/build/v86.wasm";
+                const V86_BIOS_PATH = "https://cdn.jsdelivr.net/npm/v86@0.3.1/bios/";
+                const V86_LINUX_IMAGE_URL = "https://cdn.jsdelivr.net/gh/ShaneStudios/RyxIDE-images@main/images/basiclinux.iso";
+
+                v86Emulator = new V86Starter({ wasm_path: V86_WASM_PATH, memory_size: 512 * 1024 * 1024, vga_memory_size: 8 * 1024 * 1024, cdrom: { url: V86_LINUX_IMAGE_URL, async: true }, autostart: true, disable_keyboard: true, disable_mouse: true, screen_container: null, });
+
+                v86Emulator.add_listener("serial0-output-byte", (byte) => { xtermInstance?.write(new Uint8Array([byte])); });
+                xtermInstance.onData((data) => { v86Emulator?.serial0_send(data); });
+
+                v86Emulator.add_listener("emulator-ready", () => { isV86Ready = true; isV86Loading = false; hideLoader(loaderOverlay); updateStatus("Linux environment ready.", "success"); updateCredits(); updateRunButtonState(); xtermInstance?.focus(); });
+                v86Emulator.add_listener("emulator-stopped", () => { isV86Ready = false; isV86Loading = false; v86Emulator = null; xtermInstance?.dispose(); xtermInstance = null; updateStatus("Linux environment stopped.", "warning"); alert("VM stopped."); updateRunButtonState(); updateCredits(); });
+                v86Emulator.add_listener("emulator-error", (error) => { console.error("v86 Error:", error); isV86Ready = false; isV86Loading = false; v86Emulator = null; xtermInstance?.dispose(); xtermInstance = null; hideLoader(loaderOverlay); updateStatus("VM Error!", "error"); alert(`VM error: ${error?.message || error}.`); updateRunButtonState(); updateCredits(); });
+
+            } catch (error) { console.error("Terminal/VM Init Error:", error); terminalContainer.textContent = `Error: ${error.message}`; isV86Loading = false; hideLoader(loaderOverlay); updateStatus("Terminal/VM Init Failed!", "error"); }
+        },
+        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (!isV86Ready || !v86Emulator) { if (!isV86Loading) { await runtimeManager.initializeTerminalAndVM(); if(!isV86Ready) { alert("Linux env not ready."); return; } } else { alert("Linux env booting."); return; } } updateStatus(`Running ${lang} in v86...`, 'info', 0); showLoader(loaderOverlay, loaderText, `Running ${lang}...`); xtermInstance?.focus(); runtimeManager.runInV86(lang, code); },
+        runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
+        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { outputConsole.textContent = "Current file is not HTML."; updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); outputConsole.textContent = `Preview Error: ${e.message}`; updateStatus('Preview failed', 'error'); } },
+        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
+        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (!outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
+        runPythonCode: async (code) => { runtimeManager.runInV86('python', code); },
+        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
+        runRubyCode: async (code) => { runtimeManager.runInV86('ruby', code); },
+        runCSharpCode: async (code) => { runtimeManager.runInV86('csharp', code); },
+        runInV86: async (lang, code) => { if (!isV86Ready || !v86Emulator) { if (!isV86Loading) { await runtimeManager.initializeTerminalAndVM(); if(!isV86Ready) { alert("Linux env not ready."); return; } } else { alert("Linux env booting."); return; } } updateStatus(`Running ${lang} in v86...`, 'info', 0); showLoader(loaderOverlay, loaderText, `Running ${lang}...`); xtermInstance?.focus(); const extensionMap = { python: 'py', ruby: 'rb', csharp: 'cs', c: 'c', cpp: 'cpp', javascript: 'js', shell: 'sh' }; const tempFileName = `ryx_temp.${extensionMap[lang] || 'tmp'}`; const tempFilePath = `/tmp/${tempFileName}`; const executeCommandMap = { python: `python3 ${tempFilePath}\n`, ruby: `ruby ${tempFilePath}\n`, c: `gcc ${tempFilePath} -o /tmp/ryx_c_bin && /tmp/ryx_c_bin\n`, cpp: `g++ ${tempFilePath} -o /tmp/ryx_cpp_bin && /tmp/ryx_cpp_bin\n`, csharp: `mcs ${tempFilePath} -out:/tmp/ryx_cs_bin.exe && mono /tmp/ryx_cs_bin.exe\n`, shell: `sh ${tempFilePath}\n`}; const executeCommand = executeCommandMap[lang]; if(!executeCommand){ updateStatus(`v86 execution for ${lang} not configured.`, 'warning'); hideLoader(loaderOverlay); return; } try { const safeCode = btoa(unescape(encodeURIComponent(code))); const writeCommand = `echo '${safeCode}' | base64 -d > ${tempFilePath}\n`; v86Emulator.serial0_send('stty -echo\n'); v86Emulator.serial0_send(`mkdir -p /tmp\n`); v86Emulator.serial0_send(writeCommand); await new Promise(resolve => setTimeout(resolve, 150)); v86Emulator.serial0_send(executeCommand); v86Emulator.serial0_send(`exit_code=$?; echo; echo "[RyxIDE: ${lang} finished | Exit code: $exit_code]"\n`); v86Emulator.serial0_send('stty echo\n'); updateStatus(`${lang} sent to v86.`, 'info'); } catch(e) { updateStatus(`Error running ${lang}.`, 'error'); } finally { hideLoader(loaderOverlay); } }
     };
 
     const editorActions = {
@@ -254,6 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aiApplyConfirmButton.addEventListener('click', aiChatManager.confirmApplyCode);
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
+        window.addEventListener('resize', () => { xtermFitAddon?.fit(); if (editor) editor.layout(); });
     }
 
     function setupEditorSpecificEventListeners() {
@@ -270,10 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCredits() {
-        const features = new Set(['Monaco', 'Gemini']);
-        if (isPyodideReady || isPyodideLoading) features.add('Pyodide');
-        if (isRubyVMReady || isRubyVMLoading) features.add('Ruby(Exp)');
-        if (isDotnetRuntimeReady || isDotnetRuntimeLoading) features.add('.NET(PoC)');
+        const features = new Set(['Monaco', 'Gemini', 'v86', 'xterm.js']);
         if (typeof marked !== 'undefined') features.add('Marked');
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
@@ -282,17 +286,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateRunButtonState() {
          const file = currentProject?.files.find(f => f.id === currentOpenFileId);
          const lang = file?.language || 'plaintext';
-         const runnableInternal = ['html', 'css', 'javascript', 'python', 'markdown', 'ruby', 'csharp'].includes(lang);
-         const runnableExternalKey = lang === 'java' ? 'java' : (lang === 'cpp' || lang === 'c') ? 'cpp' : lang === 'rust' ? 'rust' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : null;
+         const runnableInternalV86 = ['python', 'ruby', 'csharp', 'c', 'cpp', 'shell'].includes(lang);
+         const runnableInternalClient = ['html', 'css', 'javascript', 'markdown'].includes(lang);
+         const runnableExternalKey = lang === 'java' ? 'java' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : lang === 'rust' ? 'rust' : null;
          const externalLink = runnableExternalKey ? externalSandboxLinks[runnableExternalKey] : null;
-         runButton.disabled = !runnableInternal;
-         runButton.style.display = (runnableInternal || !externalLink) ? 'inline-flex' : 'none';
-         runButton.title = runnableInternal ? `Run/Preview ${lang}` : 'Run/Preview not supported';
+         runButton.disabled = !(runnableInternalClient || (runnableInternalV86 && isV86Ready));
+         runButton.style.display = 'inline-flex';
+         runButton.title = (runnableInternalClient || runnableInternalV86) ? `Run/Preview ${lang}` : 'Run not supported';
          runExternalButton.style.display = externalLink ? 'inline-flex' : 'none';
-         if (externalLink) {
-             runExternalButton.href = externalLink;
-             runExternalButton.title = `Run ${lang} in External Sandbox`;
-         }
+         if (externalLink) { runExternalButton.href = externalLink; runExternalButton.title = `Run ${lang} in External Sandbox`; }
     }
 
     initializeEditorPage().catch(err => {
