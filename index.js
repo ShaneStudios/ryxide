@@ -53,8 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (success) {
                  await loadProjectList();
                  await updateCreditsDisplay();
-            } else {
-                 alert("Failed to delete project data from storage.");
             }
         }
     }
