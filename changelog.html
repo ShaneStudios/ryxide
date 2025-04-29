@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RyxIDE - Changelog</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app-container">
+        <div id="changelog-view">
+            <header>
+                <h1><i class="fas fa-history"></i> RyxIDE Changelog</h1>
+                <div class="header-controls">
+                    <a href="index.html" class="header-button" title="Back to Dashboard"><i class="fas fa-arrow-left"></i> Dashboard</a>
+                </div>
+            </header>
+            <main id="changelog-content">
+                <section class="changelog-entry">
+                    <h2>v0.1.7 Beta</h2>
+                    <span class="changelog-date">Date: [Insert Release Date Here]</span>
+                    <ul>
+                        <li><i class="fas fa-terminal"></i> Added integrated Linux Terminal (v86 + xterm.js).</li>
+                        <li><i class="fas fa-cogs"></i> Replaced most client-side WASM runtimes (Pyodide, Ruby, C# PoC) with execution via v86 terminal.</li>
+                        <li><i class="fas fa-file-alt"></i> Added Changelog page.</li>
+                        <li><i class="fas fa-users"></i> Added Credits & Resources page.</li>
+                        <li><i class="fas fa-database"></i> Migrated data storage from localStorage to IndexedDB.</li>
+                        <li><i class="fas fa-download"></i> Added Project Download (Zip) feature.</li>
+                        <li><i class="fas fa-pencil-alt"></i> Added File Renaming.</li>
+                        <li><i class="fas fa-save"></i> Added Auto-Save option.</li>
+                        <li><i class="fas fa-search"></i> Added Find/Replace/Go To Line editor actions.</li>
+                        <li><i class="fas fa-palette"></i> Added Theme Selector.</li>
+                        <li><i class="fas fa-keyboard"></i> Added Shortcuts help modal.</li>
+                        <li><i class="fas fa-robot"></i> Enhanced AI Chat (Markdown, History, REST API, Thinking Indicator, Friendlier).</li>
+                        <li><i class="fas fa-th-large"></i> Refined UI layout and styling.</li>
+                        <li><i class="fas fa-bug"></i> Fixed various bugs.</li>
+                    </ul>
+                </section>
+
+                <section class="changelog-entry">
+                    <h2>v0.1.6 Beta</h2>
+                    <span class="changelog-date">Date: [Insert Release Date Here]</span>
+                    <ul>
+                        <li><i class="fas fa-server"></i> Added backend execution support for Python (Flask/Render).</li>
+                        <li><i class="fas fa-link"></i> Added "Run Externally" links for Java, C++, C#.</li>
+                    </ul>
+                </section>
+
+                <section class="changelog-entry">
+                    <h2>v0.1.5 Beta & Prior</h2>
+                    <span class="changelog-date">Date: [Approximate Date Range Here]</span>
+                    <ul>
+                        <li><i class="fas fa-code"></i> Initial Release (Monaco Editor).</li>
+                        <li><i class="fas fa-folder"></i> Multi-project support (localStorage).</li>
+                        <li><i class="fas fa-file-medical"></i> File management (create, delete, open).</li>
+                        <li><i class="fas fa-robot"></i> Basic AI Chat integration.</li>
+                        <li><i class="fas fa-play-circle"></i> Client-side execution (HTML/CSS/JS, Pyodide, Marked.js, Ruby WASM Exp, C# PoC Exp).</li>
+                        <li><i class="fas fa-cog"></i> Settings page (API key).</li>
+                        <li><i class="fas fa-th-list"></i> Multi-page structure.</li>
+                    </ul>
+                </section>
+            </main>
+             <footer>
+                 <p>RyxIDE by <a href="https://github.com/ShaneStudios/" target="_blank" rel="noopener noreferrer">Shane Studios</a>.</p>
+             </footer>
+        </div>
+    </div>
+    <script src="common.js"></script>
+</body>
+</html>
