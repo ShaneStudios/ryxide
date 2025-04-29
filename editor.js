@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const runExternalButton = document.getElementById('run-external-button');
     const previewFrame = document.getElementById('preview-frame');
     const terminalContainer = document.getElementById('terminal-container');
-    const outputConsole = document.getElementById('output-console');
+    const outputConsole = document.getElementById('output-console'); // Keep ref even if hidden
     const loaderOverlay = document.getElementById('loader-overlay');
     const loaderText = document.getElementById('loader-text');
     const creditsElement = document.getElementById('credits');
@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         setupMonaco();
-        initializeTerminalAndVM();
+        runtimeManager.initializeTerminalAndVM(); // <<<<< CORRECTED CALL HERE
     }
 
     function handleMissingProject(message) {
@@ -134,8 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getXtermTheme(editorTheme) {
         return editorTheme === 'vs' ?
-         { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff' } :
-         { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78' };
+         { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff', selectionForeground: '#000000' } :
+         { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78', selectionForeground: '#ffffff' };
     }
 
     function setupMonaco() {
@@ -205,7 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 xtermFitAddon.fit();
 
                 const V86_WASM_PATH = "https://cdn.jsdelivr.net/npm/v86@0.3.1/build/v86.wasm";
-                const V86_BIOS_PATH = "https://cdn.jsdelivr.net/npm/v86@0.3.1/bios/";
                 const V86_LINUX_IMAGE_URL = "https://cdn.jsdelivr.net/gh/ShaneStudios/RyxIDE-images@main/images/basiclinux.iso";
 
                 v86Emulator = new V86Starter({ wasm_path: V86_WASM_PATH, memory_size: 512 * 1024 * 1024, vga_memory_size: 8 * 1024 * 1024, cdrom: { url: V86_LINUX_IMAGE_URL, async: true }, autostart: true, disable_keyboard: true, disable_mouse: true, screen_container: null, });
