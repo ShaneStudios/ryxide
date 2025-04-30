@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let terminalReconnectTimeout = null;
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
-    const TERMINAL_BACKEND_URL = 'wss://ryxide-backend-terminal.onrender.com';
+    const TERMINAL_BACKEND_URL ='https://ryxide-backend-terminal.onrender.com';
 
     async function initializeEditorPage() {
         const projectId = await getCurrentProjectId();
