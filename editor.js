@@ -61,10 +61,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoSaveTimeout = null;
     let xtermInstance = null;
     let xtermFitAddon = null;
-    let currentTerminalInputBuffer = ''; // Buffer for user input
+    let currentTerminalInputBuffer = '';
+    let isTerminalProcessing = false;
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
-    const TERMINAL_EXECUTE_URL = 'https://ryxide-backend-terminal.onrender.com/execute'; // Use HTTPS for fetch
+    const TERMINAL_EXECUTE_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
 
     async function initializeEditorPage() {
         const projectId = await getCurrentProjectId();
@@ -77,8 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
         updateCredits();
         setupBaseEventListeners();
-        setupMonaco();
-        terminalManager.initializeTerminal();
+        terminalManager.initializeTerminal(); // Initialize terminal UI first
+        setupMonaco(); // Monaco init involves async loading
     }
 
     function handleMissingProject(message) {
@@ -171,124 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (xtermInstance) return;
             try {
                 if (!window.Terminal || !window.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
-
-                xtermInstance = new window.Terminal({
-                    cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace',
-                    theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000,
-                });
-                xtermFitAddon = new window.FitAddon.FitAddon();
-                xtermInstance.loadAddon(xtermFitAddon);
-                xtermInstance.open(terminalContainer);
-                xtermFitAddon.fit();
-                xtermInstance.writeln('\x1b[1;34mWelcome to RyxIDE Terminal (powered by Backend)\x1b[0m');
-                xtermInstance.writeln('Enter commands to execute on the remote server.');
-                terminalManager.prompt();
-
-                xtermInstance.onData((data) => {
-                    const code = data.charCodeAt(0);
-                    if (code === 13) {
-                        xtermInstance.writeln('');
-                        if (currentTerminalInputBuffer.trim().length > 0) {
-                            terminalManager.executeCommand(currentTerminalInputBuffer);
-                        } else {
-                           terminalManager.prompt();
-                        }
-                        currentTerminalInputBuffer = '';
-                    } else if (code === 127) {
-                        if (currentTerminalInputBuffer.length > 0) {
-                            xtermInstance.write('\b \b');
-                            currentTerminalInputBuffer = currentTerminalInputBuffer.slice(0, -1);
-                        }
-                    } else if (code >= 32) {
-                        currentTerminalInputBuffer += data;
-                        xtermInstance.write(data);
-                    }
-                });
-
-            } catch (error) {
-                console.error("Terminal Init Error:", error);
-                terminalContainer.textContent = `Error initializing terminal: ${error.message}`;
-                updateStatus("Terminal Init Failed!", "error");
-            }
-        },
-
-        fitTerminal: () => {
-            try {
-                xtermFitAddon?.fit();
-            } catch (e) {
-                console.warn("Terminal fit error:", e);
-            }
-        },
-
-        prompt: () => {
-            xtermInstance?.write('\r\n$ ');
-        },
-
-        executeCommand: async (command) => {
-            if (!TERMINAL_EXECUTE_URL) {
-                xtermInstance?.writeln('\r\n\x1b[1;31mError: Terminal backend URL not configured.\x1b[0m');
-                terminalManager.prompt();
-                return;
-            }
-            xtermInstance?.writeln(`\r\n\x1b[1;33mExecuting: ${command}\x1b[0m`);
-            updateStatus(`Running command...`, 'info', 0);
-            showLoader(loaderOverlay, loaderText, "Running Command...");
-
-            try {
-                const response = await fetch(TERMINAL_EXECUTE_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: command })
-                });
-
-                const result = await response.json();
-
-                if (result.stdout) {
-                    xtermInstance?.write('\r\n' + result.stdout.replace(/\n/g, '\r\n'));
-                }
-                if (result.stderr) {
-                    xtermInstance?.write(`\r\n\x1b[1;31m${result.stderr.replace(/\n/g, '\r\n')}\x1b[0m`);
-                }
-
-                if (!response.ok || result.exitCode !== 0) {
-                    updateStatus(`Command failed (Code: ${result.exitCode || response.status})`, 'error', 5000);
-                    xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Command failed - Exit: ${result.exitCode || 'N/A'}]\x1b[0m`);
-                } else {
-                     updateStatus(`Command finished`, 'success');
-                     xtermInstance?.writeln(`\r\n\x1b[1;32m[RyxIDE: Command finished - Exit: 0]\x1b[0m`);
-                }
-
-            } catch (error) {
-                console.error("Terminal execute error:", error);
-                xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Network/Fetch Error: ${error.message}]\x1b[0m`);
-                updateStatus('Command Network Error', 'error', 5000);
-            } finally {
-                hideLoader(loaderOverlay);
-                terminalManager.prompt();
-            }
-        }
-    };
-
-
-    const runtimeManager = {
-        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } updateStatus(`Running ${lang} via terminal...`, 'info', 0); terminalManager.executeCommandViaRun(lang, code); },
-        runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
-        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
-        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
-        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); if(outputConsole) outputConsole.textContent=''; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputConsole && !outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
-        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); const targetTerminal = xtermInstance; if (targetTerminal) { targetTerminal.writeln('\r\n\x1b[1;34m--- Sending Python to Backend ---\x1b[0m'); targetTerminal.focus(); } else { console.warn("Terminal not ready for Python output."); } try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); const writer = targetTerminal || { write: (t)=>{console.log(t)}, writeln: (t)=>{console.log(t)} }; writer.writeln('\r\n\x1b[1;34m--- Backend Response Start ---\x1b[0m'); if (result.stdout) writer.write(result.stdout.replace(/\n/g, '\r\n')); if (result.stderr) writer.write(`\r\n\x1b[1;31m--- STDERR ---\r\n${result.stderr.replace(/\n/g, '\r\n')}\x1b[0m`); const exitMessage = result.exit_code === 0 ? `\r\n\x1b[1;32m--- Python finished (Backend) [Exit Code: 0] ---\x1b[0m` : `\r\n\x1b[1;31m--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---\x1b[0m`; writer.writeln(exitMessage); updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { writer.writeln(`\r\n\x1b[1;31mBackend HTTP Error ${response.status}: ${result.error || response.statusText}\x1b[0m`); updateStatus('Python Backend Error', 'error'); } } catch (error) { const writer = xtermInstance || console; writer.error(`\r\n--- ERROR ---\r\nNetwork/Fetch Error: ${error.message}\x1b[0m`); updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); if(xtermInstance) xtermInstance.write('\r\n'); } },
-        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
-        runRubyCode: async (code) => { terminalManager.executeCommandViaRun('ruby', code); },
-        runCSharpCode: async (code) => { terminalManager.executeCommandViaRun('csharp', code); },
-        runCShellCode: async(lang, code) => { terminalManager.executeCommandViaRun(lang, code); }
-    };
-
-    const terminalManager = {
-        initializeTerminal: () => {
-            if (xtermInstance) return;
-            try {
-                if (!window.Terminal || !window.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
-                xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000 });
+                xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
                 xtermFitAddon = new window.FitAddon.FitAddon();
                 xtermInstance.loadAddon(xtermFitAddon);
                 xtermInstance.open(terminalContainer);
@@ -300,18 +184,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     const code = data.charCodeAt(0);
                     if (code === 13) {
                         xtermInstance.writeln('');
-                        if (currentTerminalInputBuffer.trim().length > 0) { terminalManager.executeCommand(currentTerminalInputBuffer); }
-                        else { terminalManager.prompt(); }
+                        if (currentTerminalInputBuffer.trim().length > 0) {
+                            terminalManager.executeCommand(currentTerminalInputBuffer);
+                        } else { terminalManager.prompt(); }
                         currentTerminalInputBuffer = '';
                     } else if (code === 127) { if (currentTerminalInputBuffer.length > 0) { xtermInstance.write('\b \b'); currentTerminalInputBuffer = currentTerminalInputBuffer.slice(0, -1); } }
-                    else if (code >= 32 || data === '\t') { currentTerminalInputBuffer += data; xtermInstance.write(data); }                 });
+                    else if (code >= 32 || data === '\t') { currentTerminalInputBuffer += data; xtermInstance.write(data); }
+                });
             } catch (error) { console.error("Terminal Init Error:", error); terminalContainer.textContent = `Error initializing terminal: ${error.message}`; updateStatus("Terminal Init Failed!", "error"); }
         },
         fitTerminal: () => { try { xtermFitAddon?.fit(); } catch (e) { console.warn("Terminal fit error:", e); } },
-        prompt: () => { xtermInstance?.write('\r\n\x1b[1;32mryxide\x1b[0m $ '); },
+        prompt: () => { if(isTerminalProcessing) return; xtermInstance?.write('\r\n\x1b[1;32mryxide\x1b[0m $ '); },
         executeCommand: async (command) => {
              if (!TERMINAL_EXECUTE_URL) { xtermInstance?.writeln('\r\n\x1b[1;31mError: Terminal backend URL not configured.\x1b[0m'); terminalManager.prompt(); return; }
              xtermInstance?.writeln(`\r\n\x1b[1;33mExecuting: ${command}\x1b[0m`); updateStatus(`Running command...`, 'info', 0); showLoader(loaderOverlay, loaderText, "Running Command...");
+             isTerminalProcessing = true;
              try {
                  const response = await fetch(TERMINAL_EXECUTE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: command }) });
                  const result = await response.json();
@@ -320,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  if (!response.ok || result.exitCode !== 0) { updateStatus(`Cmd failed (Code: ${result.exitCode || response.status})`, 'error', 5000); xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Command failed - Exit: ${result.exitCode ?? 'N/A'}]\x1b[0m`); }
                  else { updateStatus(`Command finished`, 'success'); xtermInstance?.writeln(`\r\n\x1b[1;32m[RyxIDE: Command finished - Exit: 0]\x1b[0m`); }
              } catch (error) { console.error("Terminal execute error:", error); xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Network/Fetch Error: ${error.message}]\x1b[0m`); updateStatus('Command Network Error', 'error', 5000); }
-             finally { hideLoader(loaderOverlay); terminalManager.prompt(); }
+             finally { hideLoader(loaderOverlay); isTerminalProcessing = false; terminalManager.prompt(); }
         },
         executeCommandViaRun: async (lang, code) => {
              const commandMap = { ruby: `ruby`, c: `gcc temp.c -o temp_c -lm && ./temp_c`, cpp: `g++ temp.cpp -o temp_cpp -lstdc++ && ./temp_cpp`, csharp: `mcs temp.cs -out:temp_cs.exe && mono temp_cs.exe`, shell: `sh` };
@@ -329,21 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
              if (!xtermInstance) { alert("Terminal not initialized."); return; }
 
              const fileName = `temp.${{ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
-             const writeCmd = `echo '${btoa(unescape(encodeURIComponent(code)))}' | base64 -d > ${fileName}\n`;
-             const runCmd = `${cmdPrefix} ${fileName}\n`;
-             const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''} \n`;
+             const safeCode = btoa(unescape(encodeURIComponent(code)));
+             const writeCmd = `echo '${safeCode}' | base64 -d > ${fileName}`;
+             const runCmd = `${cmdPrefix} ${fileName}`;
+             const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''} `;
 
-             terminalManager.sendCommandToTerminal(writeCmd);
-             await new Promise(r => setTimeout(r, 200));
-             terminalManager.sendCommandToTerminal(runCmd);
-             await new Promise(r => setTimeout(r, 200));
-             terminalManager.sendCommandToTerminal(cleanupCmd);
-             await new Promise(r => setTimeout(r, 100));
-             terminalManager.sendCommandToTerminal(`echo "[RyxIDE: ${lang} execution attempt finished]"\n`);
+             terminalManager.sendCommandToTerminal(writeCmd + ' && ' + runCmd + ' ; ' + cleanupCmd + '\n');
         },
         sendCommandToTerminal: (command) => {
             if (xtermInstance) {
-                 currentTerminalInputBuffer = command;
                  xtermInstance.write(command);
             } else {
                 alert("Terminal not ready to receive commands.");
@@ -351,6 +232,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const runtimeManager = {
+        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } terminalManager.executeCommandViaRun(lang, code); },
+        runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
+        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
+        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
+        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); if(outputConsole) outputConsole.textContent=''; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputConsole && !outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
+        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); const targetTerminal = xtermInstance; if (targetTerminal) { targetTerminal.writeln('\r\n\x1b[1;34m--- Sending Python to Backend ---\x1b[0m'); targetTerminal.focus(); } else { console.warn("Terminal not ready for Python output."); } try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); const writer = targetTerminal || { write: (t)=>{console.log(t)}, writeln: (t)=>{console.log(t)} }; writer.writeln('\r\n\x1b[1;34m--- Backend Response Start ---\x1b[0m'); if (result.stdout) writer.write(result.stdout.replace(/\n/g, '\r\n')); if (result.stderr) writer.write(`\r\n\x1b[1;31m--- STDERR ---\r\n${result.stderr.replace(/\n/g, '\r\n')}\x1b[0m`); const exitMessage = result.exit_code === 0 ? `\r\n\x1b[1;32m--- Python finished (Backend) [Exit Code: 0] ---\x1b[0m` : `\r\n\x1b[1;31m--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---\x1b[0m`; writer.writeln(exitMessage); updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { writer.writeln(`\r\n\x1b[1;31mBackend HTTP Error ${response.status}: ${result.error || response.statusText}\x1b[0m`); updateStatus('Python Backend Error', 'error'); } } catch (error) { const writer = xtermInstance || console; writer.error(`\r\n--- ERROR ---\r\nNetwork/Fetch Error: ${error.message}\x1b[0m`); updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); if(xtermInstance) xtermInstance.write('\r\n'); } },
+        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
+    };
 
     const editorActions = {
         find: () => { if (editor) editor.getAction('actions.find').run(); },
