@@ -63,30 +63,16 @@
     <div id="loader-overlay" class="modal-hidden"> <div id="loader-text">Loading...</div> </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/loader.min.js"></script>
-
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-    <script>
-      if (window.Terminal) { console.info("RyxIDE Check: window.Terminal object found after xterm.js load."); }
-      else { console.error("RyxIDE Check: window.Terminal object *NOT* found after xterm.js load!"); }
-    </script>
-
+    <script>if (window.Terminal) { console.info("RyxIDE Check: window.Terminal found."); } else { console.error("RyxIDE Check: window.Terminal NOT found!"); }</script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
-    <script>
-      if (window.FitAddon && window.FitAddon.FitAddon) { console.info("RyxIDE Check: window.FitAddon.FitAddon object found after xterm-addon-fit load."); }
-      else { console.error("RyxIDE Check: window.FitAddon.FitAddon object *NOT* found after xterm-addon-fit load!"); }
-    </script>
-
+    <script>if (window.FitAddon?.FitAddon) { console.info("RyxIDE Check: window.FitAddon.FitAddon found."); } else { console.error("RyxIDE Check: window.FitAddon.FitAddon NOT found!"); }</script>
     <script src="https://cdn.jsdelivr.net/npm/v86/build/libv86.js"></script>
-    <script>
-      if (window.V86Starter) { console.info("RyxIDE Check: window.V86Starter object found after libv86.js load."); }
-      else { console.error("RyxIDE Check: window.V86Starter object *NOT* found after libv86.js load!"); }
-    </script>
-
+    <script>if (window.V86Starter) { console.info("RyxIDE Check: window.V86Starter found."); } else { console.error("RyxIDE Check: window.V86Starter NOT found!"); }</script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai@0.1.3/dist/index.min.js"></script>
     <script type="module"> try { const { DefaultRubyVM } = await import('https://cdn.jsdelivr.net/npm/@ruby/wasm-wasi@2.1.0/dist/browser.esm.js'); window.DefaultRubyVM = DefaultRubyVM; } catch (err) { console.error("Ruby VM Load Fail:", err); window.DefaultRubyVM = null; } </script>
     <script src="https://ryxide-placeholder.net/dotnet.runtime.js" defer></script>
-
 
     <script src="common.js"></script>
     <script src="editor.js"></script>
