@@ -59,8 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let aiApplyAction = null;
     let currentSettings = {};
     let autoSaveTimeout = null;
+
+    let terminalWebSocket = null;
     let xtermInstance = null;
     let xtermFitAddon = null;
+    let isTerminalConnected = false;
+    let terminalReconnectTimeout = null;
     let currentTerminalInputBuffer = '';
     let isTerminalProcessing = false;
 
@@ -78,8 +82,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
         updateCredits();
         setupBaseEventListeners();
-        terminalManager.initializeTerminal(); // Initialize terminal UI first
-        setupMonaco(); // Monaco init involves async loading
+        terminalManager.initializeTerminal();
+        setupMonaco();
     }
 
     function handleMissingProject(message) {
@@ -171,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTerminal: () => {
             if (xtermInstance) return;
             try {
-                if (!window.Terminal || !window.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
+                if (!window.Terminal || !window.FitAddon?.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
                 xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
                 xtermFitAddon = new window.FitAddon.FitAddon();
                 xtermInstance.loadAddon(xtermFitAddon);
@@ -182,11 +186,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 terminalManager.prompt();
                 xtermInstance.onData((data) => {
                     const code = data.charCodeAt(0);
+                    if (isTerminalProcessing) return;
                     if (code === 13) {
                         xtermInstance.writeln('');
-                        if (currentTerminalInputBuffer.trim().length > 0) {
-                            terminalManager.executeCommand(currentTerminalInputBuffer);
-                        } else { terminalManager.prompt(); }
+                        if (currentTerminalInputBuffer.trim().length > 0) { terminalManager.executeCommand(currentTerminalInputBuffer); }
+                        else { terminalManager.prompt(); }
                         currentTerminalInputBuffer = '';
                     } else if (code === 127) { if (currentTerminalInputBuffer.length > 0) { xtermInstance.write('\b \b'); currentTerminalInputBuffer = currentTerminalInputBuffer.slice(0, -1); } }
                     else if (code >= 32 || data === '\t') { currentTerminalInputBuffer += data; xtermInstance.write(data); }
@@ -197,8 +201,8 @@ document.addEventListener('DOMContentLoaded', () => {
         prompt: () => { if(isTerminalProcessing) return; xtermInstance?.write('\r\n\x1b[1;32mryxide\x1b[0m $ '); },
         executeCommand: async (command) => {
              if (!TERMINAL_EXECUTE_URL) { xtermInstance?.writeln('\r\n\x1b[1;31mError: Terminal backend URL not configured.\x1b[0m'); terminalManager.prompt(); return; }
-             xtermInstance?.writeln(`\r\n\x1b[1;33mExecuting: ${command}\x1b[0m`); updateStatus(`Running command...`, 'info', 0); showLoader(loaderOverlay, loaderText, "Running Command...");
              isTerminalProcessing = true;
+             xtermInstance?.writeln(`\r\n\x1b[1;33mExecuting: ${command}\x1b[0m`); updateStatus(`Running command...`, 'info', 0); showLoader(loaderOverlay, loaderText, "Running Command...");
              try {
                  const response = await fetch(TERMINAL_EXECUTE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: command }) });
                  const result = await response.json();
@@ -214,22 +218,15 @@ document.addEventListener('DOMContentLoaded', () => {
              const cmdPrefix = commandMap[lang];
              if (!cmdPrefix) { alert(`Execution via terminal not set for ${lang}`); return; }
              if (!xtermInstance) { alert("Terminal not initialized."); return; }
-
              const fileName = `temp.${{ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
              const safeCode = btoa(unescape(encodeURIComponent(code)));
              const writeCmd = `echo '${safeCode}' | base64 -d > ${fileName}`;
              const runCmd = `${cmdPrefix} ${fileName}`;
-             const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''} `;
-
-             terminalManager.sendCommandToTerminal(writeCmd + ' && ' + runCmd + ' ; ' + cleanupCmd + '\n');
+             const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''}`;
+             const fullCommand = `${writeCmd} && ${runCmd} ; ${cleanupCmd}\n`;
+             terminalManager.sendCommandToTerminal(fullCommand);
         },
-        sendCommandToTerminal: (command) => {
-            if (xtermInstance) {
-                 xtermInstance.write(command);
-            } else {
-                alert("Terminal not ready to receive commands.");
-            }
-        }
+        sendCommandToTerminal: (command) => { if (xtermInstance && !isTerminalProcessing) { xtermInstance.write(command); } else if (!xtermInstance) { alert("Terminal not ready."); } }
     };
 
     const runtimeManager = {
