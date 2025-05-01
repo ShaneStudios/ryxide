@@ -1,561 +1,520 @@
-import { Terminal } from '/@xterm/xterm';
-import { FitAddon } from '/@xterm/addon-fit';
-
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Editor DOMContentLoaded event triggered.");
-    try {
-        console.log("Fetching current project ID...");
-        const projectId = await getCurrentProjectId();
-        console.log("Current project ID fetched:", projectId);
-        if (!projectId) {
-            console.warn("No project ID found. Handling missing project scenario.");
-            handleMissingProject("No project selected.");
-            return;
-        }
-
-        console.log("Fetching project data from storage with project ID:", projectId);
-        currentProject = await getProjectFromStorage(projectId);
-        console.log("Loaded project data:", currentProject);
-        if (!currentProject) {
-            console.warn("Failed to load project data for project ID:", projectId);
-            handleMissingProject("Failed to load project data.");
-            return;
-        }
-
-        console.log("Fetching user settings...");
-        currentSettings = await getSettings();
-        console.log("Loaded user settings:", currentSettings);
-
-        console.log("Ensuring project integrity for project:", currentProject);
-        ensureProjectIntegrity();
-
-        console.log("Updating UI with project name...");
-        editorProjectNameH1.textContent = `RyxIDE - ${currentProject.name || 'Untitled'}`;
-        console.log("UI project name updated to:", editorProjectNameH1.textContent);
-        document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
-        console.log("Document title updated to:", document.title);
-
-        console.log("Updating credits...");
-        updateCredits();
-
-        console.log("Setting up base event listeners...");
-        setupBaseEventListeners();
-
-        console.log("Initializing terminal...");
-        terminalManager.initializeTerminal();
-
-        console.log("Setting up Monaco editor...");
-        setupMonaco();
-    } catch (err) {
-        console.error("Editor initialization failed with error:", err);
-        alert("Failed to initialize the editor. Please check the console.");
-        console.log("Displaying error message in DOM...");
-        document.body.innerHTML = `<div style="padding: 20px; color: red;"><h1>Init Error</h1><pre>${escapeHtml(String(err))}</pre></div>`;
-    }
-});
-
-function handleMissingProject(message) {
-    console.warn("Handling missing project with message:", message);
-    console.log("Alerting user with message:", message + " Redirecting to dashboard.");
-    alert(message + " Redirecting to dashboard.");
-    console.log("Setting current project ID to null...");
-    try {
-        setCurrentProjectId(null);
-        console.log("Current project ID set to null successfully.");
-    } catch (err) {
-        console.error("Error setting current project ID to null:", err);
-    }
-    console.log("Redirecting to dashboard (index.html)...");
-    window.location.href = 'index.html';
-}
-
-function ensureProjectIntegrity() {
-    console.log("Ensuring project integrity for current project:", currentProject);
-    if (!currentProject.files) {
-        console.warn("Project files missing. Initializing empty files array.");
-        currentProject.files = [];
-        console.log("Initialized empty files array:", currentProject.files);
-    }
-    if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
-        console.warn("AI chats missing or invalid. Creating default chat.");
-        const defaultChatId = generateUUID();
-        console.log("Generated default chat ID:", defaultChatId);
-        currentProject.aiChats = [{ id: defaultChatId, name: 'Chat 1', messages: [], createdAt: Date.now() }];
-        currentProject.currentAiChatId = defaultChatId;
-        console.log("Created default AI chat:", currentProject.aiChats);
-        console.log("Set current AI chat ID to:", defaultChatId);
-    }
-    if (!currentProject.currentAiChatId || !currentProject.aiChats.find(c => c.id === currentProject.currentAiChatId)) {
-        console.warn("Current AI chat ID missing or invalid. Setting to first chat.");
-        const newChatId = currentProject.aiChats[0]?.id || null;
-        currentProject.currentAiChatId = newChatId;
-        console.log("Set current AI chat ID to:", newChatId);
-    }
-    console.log("Validating and fixing AI chat messages...");
-    currentProject.aiChats.forEach(chat => {
-        if (!chat.messages) {
-            console.warn(`Chat ${chat.id} missing messages. Initializing empty messages array.`);
-            chat.messages = [];
-            console.log(`Initialized empty messages array for chat ${chat.id}:`, chat.messages);
-        }
-        const originalLength = chat.messages.length;
-        chat.messages = chat.messages.filter(msg => {
-            const isValid = msg && msg.role && typeof msg.parts === 'string';
-            if (!isValid) console.warn(`Invalid message found in chat ${chat.id}:`, msg);
-            return isValid;
-        });
-        console.log(`Filtered messages for chat ${chat.id}. Original length: ${originalLength}, New length: ${chat.messages.length}`);
-    });
-    console.log("Project integrity ensured:", currentProject);
-}
-
-function postMonacoSetup() {
-    console.log("Running post-Monaco setup...");
-    currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
-    console.log("Determined current open file ID:", currentOpenFileId);
-    
-    console.log("Rendering file list...");
-    try {
-        fileManager.renderList();
-        console.log("File list rendered successfully.");
-    } catch (err) {
-        console.error("Error rendering file list:", err);
-    }
-
-    if (currentOpenFileId) {
-        console.log("Opening file with ID:", currentOpenFileId);
-        try {
-            fileManager.open(currentOpenFileId, true);
-            console.log("File opened successfully with ID:", currentOpenFileId);
-        } catch (err) {
-            console.error("Error opening file with ID:", currentOpenFileId, "Error:", err);
-        }
-    } else {
-        console.log("No file to open. Setting default editor state.");
-        try {
-            updateRunButtonState();
-            console.log("Run button state updated.");
-        } catch (err) {
-            console.error("Error updating run button state:", err);
-        }
-        if (editor) {
-            console.log("Setting default editor value...");
-            editor.setValue("// Welcome!");
-            console.log("Editor value set to default.");
-            monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
-            console.log("Editor language set to plaintext.");
-        } else {
-            console.warn("Editor instance not available to set default state.");
-        }
-    }
-    
-    console.log("Loading AI chats...");
-    try {
-        aiChatManager.loadChats();
-        console.log("AI chats loaded successfully.");
-    } catch (err) {
-        console.error("Error loading AI chats:", err);
-    }
-    
-    console.log("Applying settings...");
-    applySettings();
-    
-    console.log("Setting editor dirty state to false...");
-    setEditorDirty(false);
-    
-    console.log("Setting up editor-specific event listeners...");
-    try {
-        setupEditorSpecificEventListeners();
-        console.log("Editor-specific event listeners set up successfully.");
-    } catch (err) {
-        console.error("Error setting up editor-specific event listeners:", err);
-    }
-    
-    console.log("Fitting terminal...");
-    try {
-        terminalManager.fitTerminal();
-        console.log("Terminal fitted successfully.");
-    } catch (err) {
-        console.error("Error fitting terminal:", err);
-    }
-}
-
-function applySettings() {
-    console.log("Applying editor and terminal settings with current settings:", currentSettings);
-    if (editor) {
-        console.log("Applying Monaco editor settings...");
-        try {
-            monaco.editor.setTheme(currentSettings.theme);
-            console.log("Monaco editor theme set to:", currentSettings.theme);
-            editor.updateOptions({
-                fontSize: currentSettings.fontSize || 14,
-                tabSize: currentSettings.tabSize || 4,
-                renderWhitespace: currentSettings.renderWhitespace || 'none',
-                wordWrap: currentSettings.wordWrap || 'on'
-            });
-            console.log("Monaco editor options updated:", {
-                fontSize: currentSettings.fontSize || 14,
-                tabSize: currentSettings.tabSize || 4,
-                renderWhitespace: currentSettings.renderWhitespace || 'none',
-                wordWrap: currentSettings.wordWrap || 'on'
-            });
-        } catch (err) {
-            console.error("Error applying Monaco editor settings:", err);
-        }
-    } else {
-        console.warn("Editor instance not available to apply settings.");
-    }
-    
-    console.log("Updating theme selector header...");
-    themeSelectorHeader.value = currentSettings.theme;
-    console.log("Theme selector header updated to:", currentSettings.theme);
-    
-    if (xtermInstance) {
-        console.log("Applying Xterm theme...");
-        try {
-            const theme = getXtermTheme(currentSettings.theme);
-            xtermInstance.setOption('theme', theme);
-            console.log("Xterm theme applied:", theme);
-        } catch (err) {
-            console.error("Error applying Xterm theme:", err);
-        }
-    } else {
-        console.warn("Xterm instance not available to apply theme.");
-    }
-}
-
-function getXtermTheme(editorTheme) {
-    console.log("Getting Xterm theme for editor theme:", editorTheme);
-    const theme = editorTheme === 'vs' ? {
-        background: '#ffffff',
-        foreground: '#000000',
-        cursor: '#000000',
-        selectionBackground: '#add6ff',
-        selectionForeground: '#000000'
-    } : {
-        background: '#1e1e1e',
-        foreground: '#cccccc',
-        cursor: '#cccccc',
-        selectionBackground: '#264f78',
-        selectionForeground: '#ffffff'
-    };
-    console.log("Returning Xterm theme:", theme);
-    return theme;
-}
-
-function setupMonaco() {
-    console.log("Setting up Monaco editor...");
-    try {
-        console.log("Configuring RequireJS paths for Monaco...");
-        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' } });
-        console.log("RequireJS paths configured.");
-    } catch (err) {
-        console.error("Error configuring RequireJS paths:", err);
-    }
-    
-    console.log("Setting up Monaco environment...");
-    window.MonacoEnvironment = {
-        getWorkerUrl: function (moduleId, label) {
-            console.log("Loading Monaco worker for moduleId:", moduleId, "label:", label);
-            const workerMap = {
-                'editorWorkerService': 'vs/editor/editor.worker.js',
-                'css': 'vs/language/css/css.worker.js',
-                'html': 'vs/language/html/html.worker.js',
-                'json': 'vs/language/json/json.worker.js',
-                'typescript': 'vs/language/typescript/ts.worker.js',
-                'javascript': 'vs/language/typescript/ts.worker.js'
-            };
-            const workerBase = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/';
-            const workerPath = workerMap[label] || workerMap.editorWorkerService;
-            const workerUrl = `${workerBase}${workerPath}`;
-            console.log("Returning worker URL:", workerUrl);
-            return workerUrl;
-        }
-    };
-    
-    console.log("Loading Monaco editor module...");
-    require(['vs/editor/editor.main'], function () {
-        try {
-            console.log("Initializing Monaco editor instance with container:", editorContainer);
-            editor = monaco.editor.create(editorContainer, {
-                theme: currentSettings.theme,
-                automaticLayout: true,
-                minimap: { enabled: true },
-                wordWrap: 'on',
-                contextmenu: true,
-                fontSize: 14,
-                scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
-            });
-            console.log("Monaco editor instance created successfully.");
-            
-            console.log("Setting up editor content change listener...");
-            editor.onDidChangeModelContent((e) => {
-                console.log("Editor content changed event triggered:", e);
-                if (!e.isFlush && currentProject && currentOpenFileId) {
-                    console.log("Editor content changed is not a flush event, project and file ID exist.");
-                    console.log("Marking editor as dirty...");
-                    setEditorDirty(true);
-                    console.log("Handling auto-save due to content change...");
-                    handleAutoSave();
-                } else {
-                    console.log("Content change ignored: Flush event or missing project/file ID.");
-                }
-            });
-            console.log("Editor content change listener set up.");
-            
-            console.log("Setting up editor keybindings...");
-            setupEditorKeybindings();
-            console.log("Setting up Monaco completions...");
-            setupMonacoCompletions();
-            console.log("Running post-Monaco setup...");
-            postMonacoSetup();
-        } catch (error) {
-            console.error("Monaco initialization error:", error);
-            console.log("Displaying Monaco init error in editor container...");
-            editorContainer.textContent = `Editor Init Error: ${error.message}. Reload.`;
-            console.log("Disabling editor features due to init error...");
-            disableEditorFeatures();
-        }
-    }, function (error) {
-        console.error("Monaco module load error:", error);
-        console.log("Displaying Monaco load error in editor container...");
-        editorContainer.textContent = `Editor Load Error. Check connection/console. Error: ${error}`;
-        console.log("Disabling editor features due to load error...");
-        disableEditorFeatures();
-    });
-}
-
-function disableEditorFeatures() {
-    console.warn("Disabling editor features due to error.");
-    try {
-        console.log("Disabling save project button...");
-        saveProjectButton.disabled = true;
-        console.log("Disabling run button...");
-        runButton.disabled = true;
-        console.log("Hiding run external button...");
-        runExternalButton.style.display = 'none';
-        console.log("Disabling find button...");
-        findButton.disabled = true;
-        console.log("Disabling replace button...");
-        replaceButton.disabled = true;
-        console.log("Disabling go to line button...");
-        gotoLineButton.disabled = true;
-        console.log("Disabling go to line input...");
-        gotoLineInput.disabled = true;
-        console.log("Disabling rename file button...");
-        renameFileButton.disabled = true;
-        console.log("Disabling delete file button...");
-        deleteFileButton.disabled = true;
-        console.log("Disabling AI send button...");
-        aiSendButton.disabled = true;
-        console.log("Disabling AI chat input...");
-        aiChatInput.disabled = true;
-        console.log("Editor features disabled successfully.");
-    } catch (err) {
-        console.error("Error disabling editor features:", err);
-    }
-}
-
-function setupEditorKeybindings() {
-    console.log("Setting up editor keybindings...");
-    if (!editor) {
-        console.warn("Editor instance not available for keybindings setup.");
-        return;
-    }
-    try {
-        console.log("Adding Ctrl/Cmd + S keybinding for save project...");
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible');
-        console.log("Adding Ctrl/Cmd + F keybinding for find...");
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => {
-            console.log("Running find action...");
-            editor.getAction('actions.find').run();
-        });
-        console.log("Adding Ctrl/Cmd + H keybinding for find/replace...");
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => {
-            console.log("Running find/replace action...");
-            editor.getAction('editor.action.startFindReplaceAction').run();
-        });
-        console.log("Editor keybindings set up successfully.");
-    } catch (err) {
-        console.error("Error setting up editor keybindings:", err);
-    }
-}
-
-function setupMonacoCompletions() {
-    console.log("Setting up Monaco completions...");
-    if (!window.monaco) {
-        console.warn("Monaco instance not found. Skipping completions setup.");
-        return;
-    }
-    try {
-        console.log("Setting JavaScript/TypeScript compiler options...");
-        monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
-            target: monaco.languages.typescript.ScriptTarget.ES2016,
-            allowNonTsExtensions: true
-        });
-        console.log("JavaScript/TypeScript compiler options set.");
-
-        console.log("Registering JavaScript completion provider...");
-        monaco.languages.registerCompletionItemProvider('javascript', {
-            provideCompletionItems: (model, position) => {
-                console.log("Providing JavaScript completion items at position:", position);
-                const word = model.getWordUntilPosition(position);
-                const range = {
-                    startLineNumber: position.lineNumber,
-                    endLineNumber: position.lineNumber,
-                    startColumn: word.startColumn,
-                    endColumn: word.endColumn
-                };
-                const suggestions = [
-                    { label: 'clog', detail: 'console.log()', kind: 17, insertText: 'console.log($1);', insertTextRules: 4, range },
-                    { label: 'fun', detail: 'function', kind: 17, insertText: 'function ${1:name}($2) {\n\t$0\n}', insertTextRules: 4, range },
-                    { label: 'forloop', detail: 'for loop', kind: 17, insertText: 'for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {\n\tconst ${3:element} = ${2:array}[${1:i}];\n\t$0\n}', insertTextRules: 4, range },
-                    { label: 'timeout', detail: 'setTimeout', kind: 17, insertText: 'setTimeout(() => {\n\t$0\n}, ${1:1000});', insertTextRules: 4, range }
-                ];
-                console.log("Returning JavaScript completion suggestions:", suggestions);
-                return { suggestions };
-            }
-        });
-
-        console.log("Registering Python completion provider...");
-        monaco.languages.registerCompletionItemProvider('python', {
-            provideCompletionItems: (model, position) => {
-                console.log("Providing Python completion items at position:", position);
-                const word = model.getWordUntilPosition(position);
-                const range = {
-                    startLineNumber: position.lineNumber,
-                    endLineNumber: position.lineNumber,
-                    startColumn: word.startColumn,
-                    endColumn: word.endColumn
-                };
-                const suggestions = [
-                    { label: 'fprint', detail: 'print(f"...")', kind: 17, insertText: 'print(f"$1")', insertTextRules: 4, range },
-                    { label: 'def', detail: 'def function', kind: 17, insertText: 'def ${1:name}($2):\n\t"""$3"""\n\t$0', insertTextRules: 4, range },
-                    { label: 'class', detail: 'class definition', kind: 17, insertText: 'class ${1:Name}:\n\tdef __init__(self, $2):\n\t\t$0', insertTextRules: 4, range }
-                ];
-                console.log("Returning Python completion suggestions:", suggestions);
-                return { suggestions };
-            }
-        });
-
-        console.log("Registering HTML completion provider...");
-        monaco.languages.registerCompletionItemProvider('html', {
-            provideCompletionItems: (model, position) => {
-                console.log("Providing HTML completion items at position:", position);
-                const word = model.getWordUntilPosition(position);
-                const range = {
-                    startLineNumber: position.lineNumber,
-                    endLineNumber: position.lineNumber,
-                    startColumn: word.startColumn,
-                    endColumn: word.endColumn
-                };
-                const suggestions = [
-                    { label: 'html5', detail: 'HTML5 Boilerplate', kind: 17, insertText: '<!DOCTYPE html>\n<html lang="en">\n<head>\n\t<meta charset="UTF-8">\n\t<meta name="viewport" content="width=device-width, initial-scale=1.0">\n\t<title>${1:Document}</title>\n\t<link rel="stylesheet" href="${2:style.css}">\n</head>\n<body>\n\t$0\n\t<script src="${3:script.js}"></script>\n</body>\n</html>', insertTextRules: 4, range },
-                    { label: 'div', detail: '<div> element', kind: 17, insertText: '<div class="$1">\n\t$0\n</div>', insertTextRules: 4, range },
-                    { label: 'canvas', detail: '<canvas> element', kind: 17, insertText: '<canvas id="$1" width="$2" height="$3"></canvas>', insertTextRules: 4, range }
-                ];
-                console.log("Returning HTML completion suggestions:", suggestions);
-                return { suggestions };
-            }
-        });
-        console.log("Monaco completions set up successfully.");
-    } catch (err) {
-        console.error("Error setting up Monaco completions:", err);
-    }
-}
-
-function setEditorDirty(isDirty) {
-    console.log("Setting editor dirty state to:", isDirty);
-    if (!currentOpenFileId && isDirty) {
-        console.log("No current open file ID. Forcing dirty state to false.");
-        isDirty = false;
-    }
-    if (editorDirty === isDirty) {
-        console.log("Editor dirty state unchanged. Skipping update.");
-        return;
-    }
-    editorDirty = isDirty;
-    console.log("Updating save project button state to:", !isDirty);
-    saveProjectButton.disabled = !isDirty;
-    console.log("Updating status indicator text to:", isDirty ? '* Unsaved Changes' : '');
-    statusIndicator.textContent = isDirty ? '* Unsaved Changes' : '';
-    console.log("Updating status indicator class to:", isDirty ? 'status-indicator status-warning' : 'status-indicator');
-    statusIndicator.className = isDirty ? 'status-indicator status-warning' : 'status-indicator';
-    const newTitle = `RyxIDE - ${currentProject?.name || 'Editor'}${isDirty ? '*' : ''}`;
-    console.log("Updating document title to:", newTitle);
-    document.title = newTitle;
-}
-
-function updateStatus(message, type = 'info', duration = 3000) {
-    console.log("Updating status with message:", message, "type:", type, "duration:", duration);
+const PYTHON_BACKEND_URL = "https://ryxide-python-backend.onrender.com/execute";
+const TERMINAL_EXECUTE_URL = "https://ryxide-python-backend.onrender.com/terminal";
+let monacoEditor = null;
+let xtermInstance = null;
+let xtermFitAddon = null;
+let currentFile = null;
+let currentProject = null;
+let editorState = { isSaved: true, activeTab: 'editor' };
+const aiChatHistory = new Map();
+let currentChatId = null;
+function updateStatus(message, type = 'success') {
+    const statusIndicator = document.getElementById('status-indicator');
+    if (!statusIndicator) return;
     statusIndicator.textContent = message;
-    console.log("Status indicator text set to:", message);
-    statusIndicator.className = `status-indicator status-${type}`;
-    console.log("Status indicator class set to:", statusIndicator.className);
-    if (duration > 0) {
-        console.log("Scheduling status clear after duration:", duration);
-        setTimeout(() => {
-            if (!editorDirty && statusIndicator.textContent === message) {
-                console.log("Clearing status indicator as no unsaved changes and message matches.");
-                statusIndicator.textContent = '';
-                statusIndicator.className = 'status-indicator';
-                console.log("Status indicator cleared.");
-            } else {
-                console.log("Status not cleared: Editor dirty or message changed.");
-            }
-        }, duration);
-    }
+    statusIndicator.className = '';
+    statusIndicator.classList.add(`status-${type}`);
+    setTimeout(() => {
+        statusIndicator.textContent = '';
+        statusIndicator.className = '';
+    }, 5000);
 }
-
-async function handleSaveProject() {
-    console.log("Saving project...");
-    if (!currentProject || !editor) {
-        console.warn("No project or editor instance available for saving. Aborting save.");
-        return;
-    }
-    if (currentOpenFileId) {
-        console.log("Finding file with ID:", currentOpenFileId);
-        const file = currentProject.files.find(f => f.id === currentOpenFileId);
-        if (file) {
-            console.log("File found:", file);
-            file.content = editor.getValue();
-            console.log("Updated file content for file ID:", currentOpenFileId, "Content:", file.content);
-        } else {
-            console.error("Error: Open file data missing for ID:", currentOpenFileId);
-            updateStatus('Error: Open file data missing!', 'error', 5000);
+const fileManager = {
+    files: [],
+    initialize: async () => {
+        const projectId = await getCurrentProjectId();
+        if (!projectId) {
+            updateStatus('No project selected', 'error');
             return;
         }
-    } else {
-        console.log("No current open file ID. Proceeding with project save without file update.");
-    }
-    console.log("Saving project to storage:", currentProject);
-    try {
-        const saved = await saveProjectToStorage(currentProject);
-        if (saved) {
-            console.log("Project saved successfully to storage.");
-            setEditorDirty(false);
-            updateStatus(`Project saved.`, 'success');
-        } else {
-            console.error("Error saving project: saveProjectToStorage returned false.");
-            updateStatus('Error Saving Project!', 'error', 5000);
+        currentProject = await getProjectFromStorage(projectId);
+        if (!currentProject) {
+            updateStatus('Failed to load project', 'error');
+            return;
         }
-    } catch (err) {
-        console.error("Exception while saving project to storage:", err);
-        updateStatus('Error Saving Project: ' + err.message, 'error', 5000);
+        fileManager.files = currentProject.files || [];
+        document.getElementById('editor-project-name').textContent = currentProject.name || 'Untitled';
+        fileManager.renderList();
+        if (fileManager.files.length > 0) {
+            fileManager.selectFile(fileManager.files[0].id);
+        }
+    },
+    renderList: () => {
+        const fileList = document.getElementById('file-list');
+        if (!fileList) return;
+        fileList.innerHTML = '';
+        fileManager.files.forEach(file => {
+            const li = createDOMElement('li', {
+                className: currentFile?.id === file.id ? 'active' : '',
+                dataset: { fileId: file.id },
+                listeners: {
+                    click: () => fileManager.selectFile(file.id)
+                },
+                children: [
+                    createDOMElement('i', { className: `fas fa-file file-icon ${getLanguageFromFilename(file.name)}` }),
+                    createDOMElement('span', { textContent: file.name })
+                ]
+            });
+            fileList.appendChild(li);
+        });
+    },
+    selectFile: (fileId) => {
+        const file = fileManager.files.find(f => f.id === fileId);
+        if (!file) return;
+        currentFile = file;
+        fileManager.renderList();
+        if (monacoEditor) {
+            const model = monacoEditor.getModel();
+            if (model) {
+                model.setValue(file.content || '');
+                monaco.editor.setModelLanguage(model, getLanguageFromFilename(file.name));
+            }
+        }
+        const externalLink = document.getElementById('external-sandbox-link');
+        const language = getLanguageFromFilename(file.name);
+        externalLink.href = externalSandboxLinks[language] || '#';
+        externalLink.style.display = externalSandboxLinks[language] ? 'inline-flex' : 'none';
+    },
+    addFile: async (name) => {
+        if (!name || fileManager.files.some(f => f.name === name)) {
+            updateStatus('Invalid or duplicate file name', 'error');
+            return;
+        }
+        const newFile = {
+            id: generateUUID(),
+            name,
+            content: starterContentByLanguage[getLanguageFromFilename(name)] || '',
+            language: getLanguageFromFilename(name)
+        };
+        fileManager.files.push(newFile);
+        await fileManager.saveProject();
+        fileManager.renderList();
+        fileManager.selectFile(newFile.id);
+        updateStatus('File created', 'success');
+    },
+    renameFile: async (fileId, newName) => {
+        if (!newName || fileManager.files.some(f => f.name === newName)) {
+            updateStatus('Invalid or duplicate file name', 'error');
+            return;
+        }
+        const file = fileManager.files.find(f => f.id === fileId);
+        if (!file) return;
+        file.name = newName;
+        file.language = getLanguageFromFilename(newName);
+        await fileManager.saveProject();
+        fileManager.renderList();
+        fileManager.selectFile(fileId);
+        updateStatus('File renamed', 'success');
+    },
+    deleteFile: async (fileId) => {
+        const index = fileManager.files.findIndex(f => f.id === fileId);
+        if (index === -1) return;
+        fileManager.files.splice(index, 1);
+        await fileManager.saveProject();
+        fileManager.renderList();
+        if (fileManager.files.length > 0) {
+            fileManager.selectFile(fileManager.files[0].id);
+        } else {
+            currentFile = null;
+            if (monacoEditor) monacoEditor.setValue('');
+        }
+        updateStatus('File deleted', 'success');
+    },
+    saveProject: async () => {
+        if (!currentProject) return;
+        currentProject.files = fileManager.files;
+        const success = await saveProjectToStorage(currentProject);
+        if (success) {
+            editorState.isSaved = true;
+            updateStatus('Project saved', 'success');
+        } else {
+            updateStatus('Failed to save project', 'error');
+        }
+    }
+};
+const terminalManager = {
+    initializeTerminal: () => {
+        const terminalContainer = document.getElementById('terminal-container');
+        if (!terminalContainer) return;
+        xtermInstance = new Terminal({ cursorBlink: true });
+        xtermFitAddon = new FitAddon();
+        xtermInstance.loadAddon(xtermFitAddon);
+        xtermInstance.open(terminalContainer);
+        xtermFitAddon.fit();
+        xtermInstance.onData(data => {
+            if (data === '\r') {
+                terminalManager.executeCommand(xtermInstance.buffer.active.getLine(xtermInstance.buffer.active.cursorY)?.toString().trim() || '');
+            } else {
+                xtermInstance.write(data);
+            }
+        });
+        terminalManager.prompt();
+    },
+    prompt: () => {
+        xtermInstance?.writeln('\r\n$ ');
+    },
+    executeCommand: async (command) => {
+        if (!command) {
+            terminalManager.prompt();
+            return;
+        }
+        xtermInstance?.writeln('');
+        if (!TERMINAL_EXECUTE_URL) {
+            xtermInstance?.writeln('\r\n\x1b[1;31mError: Terminal backend URL not configured.\x1b[0m');
+            terminalManager.prompt();
+            return;
+        }
+        try {
+            const response = await fetch(TERMINAL_EXECUTE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command })
+            });
+            const result = await response.json();
+            if (result.error) {
+                xtermInstance?.writeln(`\r\n\x1b[1;31mError: ${result.error}\x1b[0m`);
+            } else {
+                xtermInstance?.writeln(result.output || '');
+            }
+        } catch (error) {
+            xtermInstance?.writeln(`\r\n\x1b[1;31mNetwork Error: ${error.message}\x1b[0m`);
+        }
+        terminalManager.prompt();
+    }
+};
+const runtimeManager = {
+    runCode: async () => {
+        if (!currentFile) {
+            updateStatus('No file selected', 'error');
+            return;
+        }
+        const language = getLanguageFromFilename(currentFile.name);
+        const code = monacoEditor?.getValue() || currentFile.content;
+        const outputConsole = document.getElementById('output-console');
+        const previewFrame = document.getElementById('preview-frame');
+        const outputContainer = document.getElementById('output-console-container');
+        if (outputConsole && outputContainer) {
+            outputConsole.textContent = '';
+            outputContainer.style.display = 'block';
+        }
+        if (previewFrame) previewFrame.src = 'about:blank';
+        if (language === 'html') {
+            if (previewFrame) {
+                previewFrame.srcdoc = code;
+                outputContainer.style.display = 'none';
+            }
+        } else if (language === 'javascript') {
+            try {
+                const consoleOutput = [];
+                const originalConsoleLog = console.log;
+                console.log = (...args) => {
+                    consoleOutput.push(args.join(' '));
+                    originalConsoleLog.apply(console, args);
+                };
+                eval(code);
+                console.log = originalConsoleLog;
+                if (outputConsole) outputConsole.textContent = consoleOutput.join('\n');
+            } catch (error) {
+                if (outputConsole) outputConsole.textContent = `Error: ${error.message}`;
+                updateStatus('Execution error', 'error');
+            }
+        } else if (language === 'python' && PYTHON_BACKEND_URL) {
+            try {
+                const response = await fetch(PYTHON_BACKEND_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const result = await response.json();
+                if (result.error) {
+                    if (outputConsole) outputConsole.textContent = result.error;
+                    updateStatus('Execution error', 'error');
+                } else {
+                    if (outputConsole) outputConsole.textContent = result.output || '';
+                    updateStatus('Code executed', 'success');
+                }
+            } catch (error) {
+                if (outputConsole) outputConsole.textContent = `Network Error: ${error.message}`;
+                updateStatus('Network error', 'error');
+            }
+        } else if (externalSandboxLinks[language]) {
+            updateStatus('Open in external sandbox to run', 'warning');
+        } else {
+            updateStatus('Language not supported', 'error');
+        }
+    }
+};
+const aiChatManager = {
+    initialize: () => {
+        const storedChats = localStorage.getItem('aiChatHistory');
+        if (storedChats) {
+            aiChatHistory.set(currentChatId, JSON.parse(storedChats));
+        }
+        if (!currentChatId) {
+            currentChatId = generateUUID();
+            aiChatHistory.set(currentChatId, []);
+        }
+        aiChatManager.renderMessages();
+    },
+    renderMessages: () => {
+        const messagesContainer = document.getElementById('ai-chat-messages');
+        if (!messagesContainer) return;
+        messagesContainer.innerHTML = '';
+        const messages = aiChatHistory.get(currentChatId) || [];
+        if (messages.length === 0) {
+            messagesContainer.innerHTML = '<p class="empty-chat">Start a new conversation!</p>';
+            return;
+        }
+        messages.forEach((msg, index) => {
+            const messageElement = createDOMElement('div', {
+                className: `ai-message role-${msg.role}`,
+                children: [
+                    createDOMElement('div', { className: 'ai-avatar', textContent: msg.role === 'user' ? 'U' : 'AI' }),
+                    createDOMElement('div', {
+                        className: 'ai-message-content',
+                        innerHTML: marked.parse(msg.content, { breaks: true })
+                    })
+                ]
+            });
+            const codeBlocks = messageElement.querySelectorAll('pre code');
+            codeBlocks.forEach(block => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block-wrapper';
+                const header = document.createElement('div');
+                header.className = 'code-block-header';
+                const lang = block.className.replace('language-', '') || 'text';
+                header.textContent = lang;
+                const copyButton = createDOMElement('button', {
+                    className: 'code-action-button',
+                    textContent: 'Copy',
+                    listeners: {
+                        click: () => {
+                            navigator.clipboard.writeText(block.textContent);
+                            updateStatus('Code copied', 'success');
+                        }
+                    }
+                });
+                const applyButton = createDOMElement('button', {
+                    className: 'code-action-button',
+                    textContent: 'Apply',
+                    listeners: {
+                        click: () => aiChatManager.showApplyCodeModal(block.textContent, lang)
+                    }
+                });
+                header.appendChild(copyButton);
+                header.appendChild(applyButton);
+                wrapper.appendChild(header);
+                wrapper.appendChild(block.parentElement);
+                block.parentElement.parentElement.replaceChild(wrapper, block.parentElement);
+            });
+            messagesContainer.appendChild(messageElement);
+        });
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    },
+    appendMessage: (role, content) => {
+        const messages = aiChatHistory.get(currentChatId) || [];
+        messages.push({ role, content });
+        aiChatHistory.set(currentChatId, messages);
+        localStorage.setItem('aiChatHistory', JSON.stringify(messages));
+        aiChatManager.renderMessages();
+    },
+    showApplyCodeModal: (code, language) => {
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const applyModal = document.getElementById('ai-apply-modal');
+        const fileSelector = document.getElementById('ai-apply-file-selector');
+        const codePreview = document.getElementById('ai-apply-code-preview');
+        if (!fileSelector || !codePreview || !modalBackdrop || !applyModal) return;
+        fileSelector.innerHTML = '';
+        fileManager.files.forEach(file => {
+            const option = createDOMElement('option', {
+                textContent: file.name,
+                dataset: { fileId: file.id }
+            });
+            fileSelector.appendChild(option);
+        });
+        codePreview.textContent = code;
+        showModal(modalBackdrop, applyModal);
+    },
+    applyCode: async (fileId, code) => {
+        const file = fileManager.files.find(f => f.id === fileId);
+        if (!file) return;
+        file.content = code;
+        if (currentFile?.id === fileId && monacoEditor) {
+            monacoEditor.setValue(code);
+        }
+        await fileManager.saveProject();
+        updateStatus('Code applied', 'success');
+    },
+    clearChat: () => {
+        aiChatHistory.set(currentChatId, []);
+        localStorage.setItem('aiChatHistory', JSON.stringify([]));
+        aiChatManager.renderMessages();
+        updateStatus('Chat cleared', 'success');
+    },
+    newChat: () => {
+        currentChatId = generateUUID();
+        aiChatHistory.set(currentChatId, []);
+        localStorage.setItem('aiChatHistory', JSON.stringify([]));
+        aiChatManager.renderMessages();
+        updateStatus('New chat started', 'success');
+    },
+    handleSendMessage: async () => {
+        const input = document.getElementById('ai-chat-input');
+        const modeSelector = document.getElementById('ai-mode-selector');
+        if (!input || !modeSelector) return;
+        const message = input.value.trim();
+        if (!message) return;
+        const mode = modeSelector.value;
+        let prompt = message;
+        if (mode === 'code' && currentFile) {
+            prompt = `Generate code for: ${message}\nCurrent file (${currentFile.name}):\n${monacoEditor?.getValue() || currentFile.content}`;
+        } else if (mode === 'debug' && currentFile) {
+            prompt = `Debug this code:\n${monacoEditor?.getValue() || currentFile.content}\nIssue: ${message}`;
+        } else if (mode === 'explain' && currentFile) {
+            prompt = `Explain this code:\n${monacoEditor?.getValue() || currentFile.content}`;
+        }
+        aiChatManager.appendMessage('user', message);
+        input.value = '';
+        const apiKey = await getApiKey();
+        const messages = aiChatHistory.get(currentChatId) || [];
+        const history = messages.map(msg => ({ role: msg.role, parts: [{ text: msg.content }] }));
+        const response = await callGeminiApi(prompt, apiKey, history);
+        if (response.error) {
+            aiChatManager.appendMessage('model', `Error: ${response.error}`);
+            updateStatus('AI request failed', 'error');
+        } else {
+            aiChatManager.appendMessage('model', response.text);
+            updateStatus('AI response received', 'success');
+        }
+    }
+};
+async function setupMonaco() {
+    const editorContainer = document.getElementById('editor-container');
+    if (!editorContainer) return;
+    require(['vs/editor/editor.main'], () => {
+        monacoEditor = monaco.editor.create(editorContainer, {
+            value: '',
+            language: 'plaintext',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            minimap: { enabled: true },
+            wordWrap: 'on',
+            fontSize: 14
+        });
+        monacoEditor.onDidChangeModelContent(() => {
+            if (currentFile) {
+                currentFile.content = monacoEditor.getValue();
+                editorState.isSaved = false;
+            }
+        });
+        const settings = getSettings();
+        settings.then(s => {
+            monacoEditor.updateOptions({
+                theme: s.theme,
+                fontSize: s.fontSize,
+                tabSize: s.tabSize,
+                renderWhitespace: s.renderWhitespace,
+                wordWrap: s.wordWrap
+            });
+        });
+    });
+}
+function handleTabSwitch(tab) {
+    const tabs = document.querySelectorAll('.tab-button');
+    const contents = document.querySelectorAll('.tab-content');
+    tabs.forEach(t => t.classList.remove('active'));
+    contents.forEach(c => c.classList.remove('active'));
+    document.querySelector(`.tab-button[data-tab="${tab}"]`)?.classList.add('active');
+    document.getElementById(`${tab}-tab-content`)?.classList.add('active');
+    editorState.activeTab = tab;
+    if (tab === 'terminal' && xtermFitAddon) {
+        xtermFitAddon.fit();
     }
 }
-
 function handleAutoSave() {
-    console.log("Handling auto-save with settings:", currentSettings, "editorDirty:", editorDirty);
-    if (!currentSettings.autoSave || !editorDirty) {
-        console.log("Auto-save skipped: Auto-save disabled or editor not dirty.");
-        return;
+    if (!editorState.isSaved && currentProject) {
+        fileManager.saveProject();
     }
-    console.log("Clearing previous auto-save timeout...");
-    clearTimeout(autoSaveTimeout);
-    console.log("Setting new auto-save timeout for 1500ms...");
-    autoSaveTimeout = setTimeout(() => {
-        console.log("Auto-saving project after timeout...");
-        handleSaveProject();
-    }, 1500);
 }
+async function initializeEditorPage() {
+    await setupMonaco();
+    terminalManager.initializeTerminal();
+    aiChatManager.initialize();
+    await fileManager.initialize();
+    const tabs = document.querySelectorAll('.tab-button');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => handleTabSwitch(tab.dataset.tab));
+    });
+    document.getElementById('save-project-button')?.addEventListener('click', fileManager.saveProject);
+    document.getElementById('new-file-button')?.addEventListener('click', () => showModal(document.getElementById('modal-backdrop'), document.getElementById('new-file-modal')));
+    document.getElementById('rename-file-button')?.addEventListener('click', () => {
+        if (currentFile) showModal(document.getElementById('modal-backdrop'), document.getElementById('rename-file-modal'));
+    });
+    document.getElementById('delete-file-button')?.addEventListener('click', () => {
+        if (currentFile) fileManager.deleteFile(currentFile.id);
+    });
+    document.getElementById('new-file-create-button')?.addEventListener('click', async () => {
+        const name = document.getElementById('new-file-name')?.value.trim();
+        if (name) {
+            await fileManager.addFile(name);
+            hideModal(document.getElementById('modal-backdrop'), document.getElementById('new-file-modal'));
+        }
+    });
+    document.getElementById('new-file-cancel-button')?.addEventListener('click', () => hideModal(document.getElementById('modal-backdrop'), document.getElementById('new-file-modal')));
+    document.getElementById('rename-file-confirm-button')?.addEventListener('click', async () => {
+        const newName = document.getElementById('rename-file-name')?.value.trim();
+        if (newName && currentFile) {
+            await fileManager.renameFile(currentFile.id, newName);
+            hideModal(document.getElementById('modal-backdrop'), document.getElementById('rename-file-modal'));
+        }
+    });
+    document.getElementById('rename-file-cancel-button')?.addEventListener('click', () => hideModal(document.getElementById('modal-backdrop'), document.getElementById('rename-file-modal')));
+    document.getElementById('ai-apply-confirm-button')?.addEventListener('click', async () => {
+        const fileSelector = document.getElementById('ai-apply-file-selector');
+        const codePreview = document.getElementById('ai-apply-code-preview');
+        if (fileSelector && codePreview) {
+            const fileId = fileSelector.selectedOptions[0]?.dataset.fileId;
+            if (fileId) {
+                await aiChatManager.applyCode(fileId, codePreview.textContent);
+                hideModal(document.getElementById('modal-backdrop'), document.getElementById('ai-apply-modal'));
+            }
+        }
+    });
+    document.getElementById('ai-apply-cancel-button')?.addEventListener('click', () => hideModal(document.getElementById('modal-backdrop'), document.getElementById('ai-apply-modal')));
+    document.getElementById('ai-send-button')?.addEventListener('click', aiChatManager.handleSendMessage);
+    document.getElementById('ai-clear-chat-button')?.addEventListener('click', aiChatManager.clearChat);
+    document.getElementById('ai-new-chat-button')?.addEventListener('click', aiChatManager.newChat);
+    document.getElementById('run-button')?.addEventListener('click', runtimeManager.runCode);
+    document.getElementById('find-button')?.addEventListener('click', () => monacoEditor?.trigger('find', 'editor.action.startFind'));
+    document.getElementById('replace-button')?.addEventListener('click', () => monacoEditor?.trigger('replace', 'editor.action.startFindReplace'));
+    document.getElementById('goto-line-button')?.addEventListener('click', () => {
+        const line = parseInt(document.getElementById('goto-line-input')?.value);
+        if (line) monacoEditor?.revealLineInCenter(line);
+    });
+    document.getElementById('theme-selector')?.addEventListener('change', async (e) => {
+        const theme = e.target.value;
+        if (monacoEditor) monacoEditor.updateOptions({ theme });
+        const settings = await getSettings();
+        settings.theme = theme;
+        await saveSettings(settings);
+    });
+    const themeSelector = document.getElementById('theme-selector');
+    if (themeSelector) {
+        ['vs', 'vs-dark', 'hc-black'].forEach(theme => {
+            const option = createDOMElement('option', { textContent: theme, value: theme });
+            themeSelector.appendChild(option);
+        });
+        getSettings().then(s => themeSelector.value = s.theme);
+    }
+    document.getElementById('ai-chat-input')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            aiChatManager.handleSendMessage();
+        }
+    });
+    setInterval(handleAutoSave, 5000);
+    window.addEventListener('resize', () => {
+        if (editorState.activeTab === 'terminal' && xtermFitAddon) xtermFitAddon.fit();
+    });
+}
+document.addEventListener('DOMContentLoaded', initializeEditorPage);
