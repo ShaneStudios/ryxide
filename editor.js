@@ -174,27 +174,15 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTerminal: () => {
             if (xtermInstance) return;
             try {
-                if (!window.Terminal || !window.FitAddon?.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
-                xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
-                xtermFitAddon = new window.FitAddon.FitAddon();
+                xtermInstance = new Terminal({ cursorBlink: true });
+                xtermFitAddon = new FitAddon();
                 xtermInstance.loadAddon(xtermFitAddon);
                 xtermInstance.open(terminalContainer);
-                terminalManager.fitTerminal();
-                xtermInstance.writeln('\x1b[1;34mWelcome to RyxIDE Terminal (powered by Backend)\x1b[0m');
-                xtermInstance.writeln('Enter commands to execute remotely.');
-                terminalManager.prompt();
-                xtermInstance.onData((data) => {
-                    const code = data.charCodeAt(0);
-                    if (isTerminalProcessing) return;
-                    if (code === 13) {
-                        xtermInstance.writeln('');
-                        if (currentTerminalInputBuffer.trim().length > 0) { terminalManager.executeCommand(currentTerminalInputBuffer); }
-                        else { terminalManager.prompt(); }
-                        currentTerminalInputBuffer = '';
-                    } else if (code === 127) { if (currentTerminalInputBuffer.length > 0) { xtermInstance.write('\b \b'); currentTerminalInputBuffer = currentTerminalInputBuffer.slice(0, -1); } }
-                    else if (code >= 32 || data === '\t') { currentTerminalInputBuffer += data; xtermInstance.write(data); }
-                });
-            } catch (error) { console.error("Terminal Init Error:", error); terminalContainer.textContent = `Error initializing terminal: ${error.message}`; updateStatus("Terminal Init Failed!", "error"); }
+                xtermFitAddon.fit();
+                xtermInstance.writeln('Welcome to the terminal!');
+            } catch (error) {
+                console.error("Terminal initialization failed:", error);
+            }
         },
         fitTerminal: () => { try { xtermFitAddon?.fit(); } catch (e) { console.warn("Terminal fit error:", e); } },
         prompt: () => { if(isTerminalProcessing) return; xtermInstance?.write('\r\n\x1b[1;32mryxide\x1b[0m $ '); },
