@@ -1,5 +1,5 @@
-import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js';
-import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
 
 document.addEventListener('DOMContentLoaded', () => {
     const editorContainer = document.getElementById('editor-container');
