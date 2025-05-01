@@ -135,14 +135,29 @@ function escapeHtml(unsafe) { if (typeof unsafe !== 'string') return ''; return 
 
 async function getAllProjectsList() { return await idbGetAll(PROJECTS_STORE_NAME) || []; }
 async function saveAllProjectsList(list) { console.warn("saveAllProjectsList deprecated."); return true; }
-async function getProjectFromStorage(projectId) { return projectId ? await idbGet(PROJECT_DATA_STORE_NAME, projectId) : null; }
+async function getProjectFromStorage(projectId) {
+    try {
+        return projectId ? await idbGet(PROJECT_DATA_STORE_NAME, projectId) : null;
+    } catch (error) {
+        console.error("Failed to retrieve project data:", error);
+        return null;
+    }
+}
 async function saveProjectToStorage(project) { if (!project?.id) return false; project.lastModified = Date.now(); const summary = { id: project.id, name: project.name, lastModified: project.lastModified }; try { await idbSet(PROJECT_DATA_STORE_NAME, project); await idbSet(PROJECTS_STORE_NAME, summary); return true; } catch (e) { alert(`Failed to save project: ${e}`); return false; } }
 async function deleteProjectFromStorage(projectId) { try { await idbRemove(PROJECT_DATA_STORE_NAME, projectId); await idbRemove(PROJECTS_STORE_NAME, projectId); return true; } catch (e) { alert(`Failed to delete project: ${e}`); return false; } }
 async function setCurrentProjectId(projectId) { try { if (projectId) await idbSet(CURRENT_PROJECT_STORE_NAME, { key: 'currentProjectId', value: projectId }); else await idbRemove(CURRENT_PROJECT_STORE_NAME, 'currentProjectId'); return true; } catch (e) { console.error("Failed to set current project ID:", e); return false; } }
 async function getCurrentProjectId() { const data = await idbGet(CURRENT_PROJECT_STORE_NAME, 'currentProjectId'); return data?.value || null; }
 async function saveApiKey(key) { try { await idbSet(API_KEY_STORE_NAME, { key: 'geminiApiKey', value: key ?? '' }); return true; } catch (e) { alert(`Failed to save API key: ${e}`); return false; } }
 async function getApiKey() { const data = await idbGet(API_KEY_STORE_NAME, 'geminiApiKey'); return data?.value || null; }
-async function getSettings() { const data = await idbGet(SETTINGS_STORE_NAME, 'userSettings'); return { ...DEFAULT_SETTINGS, ...(data?.value || {}) }; }
+async function getSettings() {
+    try {
+        const data = await idbGet(SETTINGS_STORE_NAME, 'userSettings');
+        return { ...DEFAULT_SETTINGS, ...(data?.value || {}) };
+    } catch (error) {
+        console.error("Failed to retrieve settings:", error);
+        return DEFAULT_SETTINGS;
+    }
+}
 async function saveSettings(settings) { try { await idbSet(SETTINGS_STORE_NAME, { key: 'userSettings', value: settings }); return true; } catch (e) { alert(`Failed to save settings: ${e}`); return false; } }
 
 function showLoader(loaderOverlay, loaderTextElement, text = "Loading...") { if (loaderOverlay && loaderTextElement) { loaderTextElement.textContent = text; loaderOverlay.classList.remove('modal-hidden'); } }
