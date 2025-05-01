@@ -1,4 +1,4 @@
-import { Terminal } from 'https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.js';
+import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js';
 import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -174,8 +174,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTerminal: () => {
             if (xtermInstance) return;
             try {
-                xtermInstance = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
-                xtermFitAddon = new FitAddon();
+                if (!window.Terminal || !window.FitAddon?.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
+                xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
+                xtermFitAddon = new window.FitAddon.FitAddon();
                 xtermInstance.loadAddon(xtermFitAddon);
                 xtermInstance.open(terminalContainer);
                 terminalManager.fitTerminal();
@@ -216,12 +217,14 @@ document.addEventListener('DOMContentLoaded', () => {
              const cmdPrefix = commandMap[lang];
              if (!cmdPrefix) { alert(`Execution via terminal not set for ${lang}`); return; }
              if (!xtermInstance) { alert("Terminal not initialized."); return; }
+
              const fileName = `temp.${{ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
              const safeCode = btoa(unescape(encodeURIComponent(code)));
              const writeCmd = `echo '${safeCode}' | base64 -d > ${fileName}`;
              const runCmd = `${cmdPrefix} ${fileName}`;
              const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''}`;
              const fullCommand = `${writeCmd} && ${runCmd} ; ${cleanupCmd}\n`;
+
              terminalManager.sendCommandToTerminal(fullCommand);
         },
         sendCommandToTerminal: (command) => { if (xtermInstance && !isTerminalProcessing) { xtermInstance.write(command); } else if (!xtermInstance) { alert("Terminal not ready."); } }
