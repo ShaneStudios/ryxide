@@ -2,20 +2,24 @@ import { Terminal } from '/@xterm/xterm';
 import { FitAddon } from '/@xterm/addon-fit';
 
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log("Editor DOMContentLoaded event triggered.");
     try {
         const projectId = await getCurrentProjectId();
+        console.log("Current project ID:", projectId);
         if (!projectId) {
             handleMissingProject("No project selected.");
             return;
         }
 
         currentProject = await getProjectFromStorage(projectId);
+        console.log("Loaded project data:", currentProject);
         if (!currentProject) {
             handleMissingProject("Failed to load project data.");
             return;
         }
 
         currentSettings = await getSettings();
+        console.log("Loaded settings:", currentSettings);
         ensureProjectIntegrity();
 
         editorProjectNameH1.textContent = `RyxIDE - ${currentProject.name || 'Untitled'}`;
@@ -33,25 +37,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function handleMissingProject(message) {
+    console.warn(message);
     alert(message + " Redirecting to dashboard.");
     setCurrentProjectId(null);
     window.location.href = 'index.html';
 }
 
 function ensureProjectIntegrity() {
+    console.log("Ensuring project integrity...");
     if (!currentProject.files) currentProject.files = [];
     if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
+        console.warn("AI chats missing or invalid. Creating default chat.");
         const defaultChatId = generateUUID();
         currentProject.aiChats = [{ id: defaultChatId, name: 'Chat 1', messages: [], createdAt: Date.now() }];
         currentProject.currentAiChatId = defaultChatId;
     }
     if (!currentProject.currentAiChatId || !currentProject.aiChats.find(c => c.id === currentProject.currentAiChatId)) {
+        console.warn("Current AI chat ID missing or invalid. Setting to first chat.");
         currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null;
     }
     currentProject.aiChats.forEach(chat => {
         if (!chat.messages) chat.messages = [];
         chat.messages = chat.messages.filter(msg => msg && msg.role && typeof msg.parts === 'string');
     });
+    console.log("Project integrity ensured:", currentProject);
 }
 
 function postMonacoSetup() {
@@ -74,6 +83,7 @@ function postMonacoSetup() {
 }
 
 function applySettings() {
+    console.log("Applying settings...");
     if (editor) {
         monaco.editor.setTheme(currentSettings.theme);
         editor.updateOptions({
@@ -90,6 +100,7 @@ function applySettings() {
 }
 
 function getXtermTheme(editorTheme) {
+    console.log("Getting Xterm theme for editor theme:", editorTheme);
     return editorTheme === 'vs' ? {
         background: '#ffffff',
         foreground: '#000000',
@@ -106,9 +117,11 @@ function getXtermTheme(editorTheme) {
 }
 
 function setupMonaco() {
+    console.log("Setting up Monaco editor...");
     require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' } });
     window.MonacoEnvironment = {
         getWorkerUrl: function (moduleId, label) {
+            console.log("Loading Monaco worker for label:", label);
             const workerMap = {
                 'editorWorkerService': 'vs/editor/editor.worker.js',
                 'css': 'vs/language/css/css.worker.js',
@@ -124,6 +137,7 @@ function setupMonaco() {
     };
     require(['vs/editor/editor.main'], function () {
         try {
+            console.log("Initializing Monaco editor instance...");
             editor = monaco.editor.create(editorContainer, {
                 theme: currentSettings.theme,
                 automaticLayout: true,
@@ -134,6 +148,7 @@ function setupMonaco() {
                 scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
             });
             editor.onDidChangeModelContent((e) => {
+                console.log("Editor content changed:", e);
                 if (!e.isFlush && currentProject && currentOpenFileId) {
                     setEditorDirty(true);
                     handleAutoSave();
@@ -155,6 +170,7 @@ function setupMonaco() {
 }
 
 function disableEditorFeatures() {
+    console.warn("Disabling editor features due to error.");
     saveProjectButton.disabled = true;
     runButton.disabled = true;
     runExternalButton.style.display = 'none';
@@ -169,6 +185,7 @@ function disableEditorFeatures() {
 }
 
 function setupEditorKeybindings() {
+    console.log("Setting up editor keybindings...");
     if (!editor) return;
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSaveProject, '!suggestWidgetVisible && !findWidgetVisible && !renameInputVisible');
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => editor.getAction('actions.find').run());
@@ -176,7 +193,9 @@ function setupEditorKeybindings() {
 }
 
 function setupMonacoCompletions() {
+    console.log("Setting up Monaco completions...");
     if (!window.monaco) {
+        console.warn("Monaco instance not found.");
         return;
     }
     monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
@@ -311,6 +330,7 @@ function setupMonacoCompletions() {
 }
 
 function setEditorDirty(isDirty) {
+    console.log("Setting editor dirty state to:", isDirty);
     if (!currentOpenFileId && isDirty) isDirty = false;
     if (editorDirty === isDirty) return;
     editorDirty = isDirty;
@@ -321,6 +341,7 @@ function setEditorDirty(isDirty) {
 }
 
 function updateStatus(message, type = 'info', duration = 3000) {
+    console.log("Updating status:", message, "Type:", type, "Duration:", duration);
     statusIndicator.textContent = message;
     statusIndicator.className = `status-indicator status-${type}`;
     if (duration > 0) {
@@ -334,29 +355,39 @@ function updateStatus(message, type = 'info', duration = 3000) {
 }
 
 async function handleSaveProject() {
+    console.log("Saving project...");
     if (!currentProject || !editor) {
+        console.warn("No project or editor instance available for saving.");
         return;
     }
     if (currentOpenFileId) {
         const file = currentProject.files.find(f => f.id === currentOpenFileId);
         if (file) {
             file.content = editor.getValue();
+            console.log("Updated file content:", file);
         } else {
+            console.error("Error: Open file data missing!");
             updateStatus('Error: Open file data missing!', 'error', 5000);
             return;
         }
     }
     const saved = await saveProjectToStorage(currentProject);
     if (saved) {
+        console.log("Project saved successfully.");
         setEditorDirty(false);
         updateStatus(`Project saved.`, 'success');
     } else {
+        console.error("Error saving project.");
         updateStatus('Error Saving Project!', 'error', 5000);
     }
 }
 
 function handleAutoSave() {
+    console.log("Handling auto-save...");
     if (!currentSettings.autoSave || !editorDirty) return;
     clearTimeout(autoSaveTimeout);
-    autoSaveTimeout = setTimeout(handleSaveProject, 1500);
+    autoSaveTimeout = setTimeout(() => {
+        console.log("Auto-saving project...");
+        handleSaveProject();
+    }, 1500);
 }
