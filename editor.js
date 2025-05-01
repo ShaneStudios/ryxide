@@ -4,30 +4,45 @@ import { FitAddon } from '/@xterm/addon-fit';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("Editor DOMContentLoaded event triggered.");
     try {
+        console.log("Fetching current project ID...");
         const projectId = await getCurrentProjectId();
         console.log("Current project ID:", projectId);
         if (!projectId) {
+            console.warn("No project ID found.");
             handleMissingProject("No project selected.");
             return;
         }
 
+        console.log("Fetching project data from storage...");
         currentProject = await getProjectFromStorage(projectId);
         console.log("Loaded project data:", currentProject);
         if (!currentProject) {
+            console.warn("Failed to load project data.");
             handleMissingProject("Failed to load project data.");
             return;
         }
 
+        console.log("Fetching user settings...");
         currentSettings = await getSettings();
         console.log("Loaded settings:", currentSettings);
+
+        console.log("Ensuring project integrity...");
         ensureProjectIntegrity();
 
+        console.log("Updating UI with project name...");
         editorProjectNameH1.textContent = `RyxIDE - ${currentProject.name || 'Untitled'}`;
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
 
+        console.log("Updating credits...");
         updateCredits();
+
+        console.log("Setting up base event listeners...");
         setupBaseEventListeners();
+
+        console.log("Initializing terminal...");
         terminalManager.initializeTerminal();
+
+        console.log("Setting up Monaco editor...");
         setupMonaco();
     } catch (err) {
         console.error("Editor Initialization failed:", err);
@@ -37,7 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function handleMissingProject(message) {
-    console.warn(message);
+    console.warn("Handling missing project:", message);
     alert(message + " Redirecting to dashboard.");
     setCurrentProjectId(null);
     window.location.href = 'index.html';
@@ -45,7 +60,10 @@ function handleMissingProject(message) {
 
 function ensureProjectIntegrity() {
     console.log("Ensuring project integrity...");
-    if (!currentProject.files) currentProject.files = [];
+    if (!currentProject.files) {
+        console.warn("Project files missing. Initializing empty files array.");
+        currentProject.files = [];
+    }
     if (!currentProject.aiChats || !Array.isArray(currentProject.aiChats) || currentProject.aiChats.length === 0) {
         console.warn("AI chats missing or invalid. Creating default chat.");
         const defaultChatId = generateUUID();
@@ -57,34 +75,47 @@ function ensureProjectIntegrity() {
         currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null;
     }
     currentProject.aiChats.forEach(chat => {
-        if (!chat.messages) chat.messages = [];
+        if (!chat.messages) {
+            console.warn(`Chat ${chat.id} missing messages. Initializing empty messages array.`);
+            chat.messages = [];
+        }
         chat.messages = chat.messages.filter(msg => msg && msg.role && typeof msg.parts === 'string');
     });
     console.log("Project integrity ensured:", currentProject);
 }
 
 function postMonacoSetup() {
+    console.log("Running post-Monaco setup...");
     currentOpenFileId = currentProject.openFileId || currentProject.files[0]?.id || null;
+    console.log("Current open file ID:", currentOpenFileId);
     fileManager.renderList();
     if (currentOpenFileId) {
+        console.log("Opening file with ID:", currentOpenFileId);
         fileManager.open(currentOpenFileId, true);
     } else {
+        console.log("No file to open. Setting default editor state.");
         updateRunButtonState();
         if (editor) {
             editor.setValue("// Welcome!");
             monaco.editor.setModelLanguage(editor.getModel(), 'plaintext');
         }
     }
+    console.log("Loading AI chats...");
     aiChatManager.loadChats();
+    console.log("Applying settings...");
     applySettings();
+    console.log("Setting editor dirty state to false...");
     setEditorDirty(false);
+    console.log("Setting up editor-specific event listeners...");
     setupEditorSpecificEventListeners();
+    console.log("Fitting terminal...");
     terminalManager.fitTerminal();
 }
 
 function applySettings() {
-    console.log("Applying settings...");
+    console.log("Applying editor and terminal settings...");
     if (editor) {
+        console.log("Applying Monaco editor settings...");
         monaco.editor.setTheme(currentSettings.theme);
         editor.updateOptions({
             fontSize: currentSettings.fontSize || 14,
@@ -93,8 +124,10 @@ function applySettings() {
             wordWrap: currentSettings.wordWrap || 'on'
         });
     }
+    console.log("Updating theme selector header...");
     themeSelectorHeader.value = currentSettings.theme;
     if (xtermInstance) {
+        console.log("Applying Xterm theme...");
         xtermInstance.setOption('theme', getXtermTheme(currentSettings.theme));
     }
 }
@@ -147,15 +180,21 @@ function setupMonaco() {
                 fontSize: 14,
                 scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
             });
+            console.log("Setting up editor content change listener...");
             editor.onDidChangeModelContent((e) => {
                 console.log("Editor content changed:", e);
                 if (!e.isFlush && currentProject && currentOpenFileId) {
+                    console.log("Marking editor as dirty...");
                     setEditorDirty(true);
+                    console.log("Handling auto-save...");
                     handleAutoSave();
                 }
             });
+            console.log("Setting up editor keybindings...");
             setupEditorKeybindings();
+            console.log("Setting up Monaco completions...");
             setupMonacoCompletions();
+            console.log("Running post-Monaco setup...");
             postMonacoSetup();
         } catch (error) {
             console.error("Monaco Init Error:", error);
