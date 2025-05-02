@@ -1,6 +1,3 @@
-import { Terminal } from 'https://cdn.jsdelivr.net/npm/jquery.terminal@2.36.1/js/jquery.terminal.min.js';
-import { FitAddon } from 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.10.0/lib/addon-fit.js';
-
 document.addEventListener('DOMContentLoaded', () => {
     const editorContainer = document.getElementById('editor-container');
     const runButton = document.getElementById('run-button');
@@ -79,7 +76,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
         updateCredits();
         setupBaseEventListeners();
-        terminalManager.initializeTerminal();
+        
+        if (typeof window.jQuery === 'function') {
+            window.jQuery(document).ready(terminalManager.initializeTerminal);
+        } else {
+            console.error("jQuery not loaded, cannot initialize terminal.");
+            terminalContainer.textContent = 'Error: jQuery library failed to load.';
+        }
+        
         setupMonaco();
     }
 
@@ -149,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
          const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
          tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
-         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(true); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(true); terminalManager.fitTerminal(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
 
     const aiChatManager = {
@@ -167,7 +171,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const terminalManager = {
         initializeTerminal: () => {
             if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) {
-                 if(!window.jQuery || !window.jQuery.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
+                if(!window.jQuery || !window.jQuery.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
+                else { console.warn("jQuery.terminal not ready yet, will retry."); setTimeout(terminalManager.initializeTerminal, 100); return; }
             }
             jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
                  if (command.trim()) {
@@ -178,29 +183,17 @@ document.addEventListener('DOMContentLoaded', () => {
              }, {
                  greetings: 'RyxIDE Backend Terminal\nUse "run <filename>" or standard Linux commands.',
                  prompt: '[[b;green;]ryxide] $ ',
-                 keymap: {
-                     'CTRL+C': function(e, original) {
-                         if (!jqTerminal?.paused()) { jqTerminal.echo('^C'); }
-                         else { original(); }
-                     }
-                 },
-                 outputLimit: 200,
-                 scrollOnEcho: true,
-                 height: '100%',
-                 width: '100%',
-                 exceptionHandler: function(exception) {
-                     jqTerminal?.error(String(exception));
-                 },
+                 keymap: { 'CTRL+C': function(e, original) { if (!jqTerminal?.paused()) { jqTerminal.echo('^C'); } else { original(); } } },
+                 outputLimit: 200, scrollOnEcho: true, height: '100%', width: '100%',
+                 exceptionHandler: function(exception) { jqTerminal?.error(String(exception)); },
                  formatters: $.terminal.defaults.formatters.concat('html'),
-                 finalize: (div) => {
-                     terminalManager.applyTheme(div);
-                 }
+                 finalize: (div) => { terminalManager.applyTheme(div); }
              });
              terminalManager.applyTheme();
         },
         applyTheme: (termDiv = null) => {
-            const container = termDiv || window.jQuery(terminalContainer).find('.terminal');
-            if (!container.length || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) return;
+            const container = termDiv || (typeof window.jQuery !== 'undefined' ? window.jQuery(terminalContainer).find('.terminal') : null);
+            if (!container?.length || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) return;
             const theme = currentSettings.theme === 'vs' ? 'light' : 'dark';
             const themeOptions = theme === 'light' ? { cssVars: { '--background': '#ffffff', '--color': '#000000', '--prompt-color':'#0000FF'} } : { cssVars: { '--background': '#1e1e1e', '--color': '#cccccc', '--prompt-color':'#64d97a' } };
             jqTerminal?.option('theme', theme, themeOptions);
@@ -298,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateCredits() {
         const features = new Set(['Monaco', 'Gemini', 'jQuery Terminal', 'Render']);
         if (typeof marked !== 'undefined') features.add('Marked');
-        if (typeof $ !== 'undefined' && $.terminal) features.add('jQuery');
+        if (typeof window.jQuery !== 'undefined' && window.jQuery.terminal) features.add('jQuery');
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
