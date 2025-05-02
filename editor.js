@@ -59,13 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let aiApplyAction = null;
     let currentSettings = {};
     let autoSaveTimeout = null;
-
-    let terminalWebSocket = null;
-    let xtermInstance = null;
-    let xtermFitAddon = null;
-    let isTerminalConnected = false;
-    let terminalReconnectTimeout = null;
-    let currentTerminalInputBuffer = '';
+    let jqTerminal = null;
     let isTerminalProcessing = false;
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
@@ -114,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
      function applySettings() {
         if (editor) { monaco.editor.setTheme(currentSettings.theme); editor.updateOptions({ fontSize: currentSettings.fontSize || 14, tabSize: currentSettings.tabSize || 4, renderWhitespace: currentSettings.renderWhitespace || 'none', wordWrap: currentSettings.wordWrap || 'on' }); }
         themeSelectorHeader.value = currentSettings.theme;
-        if(xtermInstance) { xtermInstance.setOption('theme', getXtermTheme(currentSettings.theme)); }
+        terminalManager.applyTheme();
     }
 
     function getXtermTheme(editorTheme) {
@@ -156,14 +150,14 @@ document.addEventListener('DOMContentLoaded', () => {
          const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
          tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
-         else if (tabName === 'terminal' && xtermInstance) { setTimeout(() => xtermFitAddon?.fit(), 0); xtermInstance.focus(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
 
     const aiChatManager = {
         loadChats: () => { if (!currentProject?.aiChats) return; aiChatSelector.innerHTML = ''; currentProject.aiChats.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); currentProject.aiChats.forEach(chat => { const option = createDOMElement('option', { value: chat.id, textContent: chat.name || `Chat ${formatDate(chat.createdAt) || chat.id.substring(0,4)}` }); if (chat.id === currentProject.currentAiChatId) option.selected = true; aiChatSelector.appendChild(option); }); aiChatManager.switchChat(currentProject.currentAiChatId); aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; },
         switchChat: (chatId) => { if (!currentProject?.aiChats) return; const chat = currentProject.aiChats.find(c => c.id === chatId); if (chat) { currentAiChat = chat; currentProject.currentAiChatId = chatId; aiChatManager.renderMessages(); if (aiChatSelector.value !== chatId) aiChatSelector.value = chatId; aiDeleteChatButton.disabled = currentProject.aiChats.length <= 1; } else { if(currentProject.aiChats.length > 0) aiChatManager.switchChat(currentProject.aiChats[0].id); else { currentAiChat = null; aiChatMessages.innerHTML = '<p class="empty-chat">No chats.</p>'; aiDeleteChatButton.disabled = true; } } },
         renderMessages: () => { aiChatMessages.innerHTML = ''; if (!currentAiChat?.messages?.length) { aiChatMessages.innerHTML = '<p class="empty-chat">Ask AI...</p>'; return; } currentAiChat.messages.forEach(msg => aiChatManager.appendMessage(msg.role, msg.parts, msg.previewData)); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; },
-        appendMessage: (role, parts, previewData = null) => { const avatar = createDOMElement('span', { className: 'ai-avatar', innerHTML: role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>' }); const contentDiv = createDOMElement('div', { className: 'ai-message-content' }); const messageDiv = createDOMElement('div', { className: `ai-message role-${role}`, children: [avatar, contentDiv] }); const messageText = Array.isArray(parts) ? parts.map(p => p.text || '').join('') : (parts || ''); if (role === 'model' && typeof marked !== 'undefined') { try { const rawHtml = marked.parse(messageText, { breaks: true, gfm: true, mangle: false, headerIds: false, highlight: function(code, lang) { if (window.monaco && lang && monaco.languages.getEncodedLanguageId(lang)) { try { return monaco.editor.colorize(code, lang, {}).then(function(result) { return result; }); } catch(e){ console.warn("Monaco colorize failed:", e); } } return escapeHtml(code); } }); const tempDiv = document.createElement('div'); tempDiv.innerHTML = rawHtml; tempDiv.querySelectorAll('pre > code').forEach((codeElement) => { const preElement = codeElement.parentElement; const lang = codeElement.className.replace('language-', '') || 'code'; const code = codeElement.textContent || ''; const copyId = `copy-${generateUUID()}`; codeElement.id = copyId; const header = createDOMElement('div', { className: 'code-block-header', children: [ createDOMElement('span', { textContent: escapeHtml(lang) }), createDOMElement('div', { children: [ createDOMElement('button', { className: 'code-action-button copy-code-btn', dataset:{copyTarget: `#${copyId}`}, title: 'Copy Code', innerHTML: '<i class="fas fa-copy"></i>'}), previewData ? createDOMElement('button', { className: 'code-action-button apply-code-btn', dataset: { fileId: previewData.fileId, codeContent: code }, title: `Apply to ${escapeHtml(previewData.fileName)}`, innerHTML: '<i class="fas fa-paste"></i> Apply'}) : null ]}) ]}); const wrapper = createDOMElement('div', { className: 'code-block-wrapper' }); preElement.parentNode?.insertBefore(wrapper, preElement); wrapper.appendChild(header); wrapper.appendChild(preElement); }); contentDiv.innerHTML = ''; while (tempDiv.firstChild) contentDiv.appendChild(tempDiv.firstChild); } catch (e) { contentDiv.textContent = messageText; } } else { contentDiv.textContent = messageText; } aiChatMessages.appendChild(messageDiv); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; },
+        appendMessage: (role, parts, previewData = null) => { const avatar = createDOMElement('span', { className: 'ai-avatar', innerHTML: role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>' }); const contentDiv = createDOMElement('div', { className: 'ai-message-content' }); const messageDiv = createDOMElement('div', { className: `ai-message role-${role}`, children: [avatar, contentDiv] }); const messageText = typeof parts === 'string' ? parts : Array.isArray(parts) ? parts.map(p => p.text || '').join('') : ''; if (role === 'model' && typeof marked !== 'undefined') { try { const rawHtml = marked.parse(messageText, { breaks: true, gfm: true, mangle: false, headerIds: false }); const tempDiv = document.createElement('div'); tempDiv.innerHTML = rawHtml; tempDiv.querySelectorAll('pre > code').forEach((codeElement) => { const preElement = codeElement.parentElement; const lang = codeElement.className.replace('language-', '') || 'code'; const code = codeElement.textContent || ''; const copyId = `copy-${generateUUID()}`; codeElement.id = copyId; const header = createDOMElement('div', { className: 'code-block-header', children: [ createDOMElement('span', { textContent: escapeHtml(lang) }), createDOMElement('div', { children: [ createDOMElement('button', { className: 'code-action-button copy-code-btn', dataset:{copyTarget: `#${copyId}`}, title: 'Copy Code', innerHTML: '<i class="fas fa-copy"></i>'}), previewData ? createDOMElement('button', { className: 'code-action-button apply-code-btn', dataset: { fileId: previewData.fileId, codeContent: code }, title: `Apply to ${escapeHtml(previewData.fileName)}`, innerHTML: '<i class="fas fa-paste"></i> Apply'}) : null ]}) ]}); const wrapper = createDOMElement('div', { className: 'code-block-wrapper' }); preElement.parentNode?.insertBefore(wrapper, preElement); wrapper.appendChild(header); wrapper.appendChild(preElement); }); contentDiv.innerHTML = ''; while (tempDiv.firstChild) contentDiv.appendChild(tempDiv.firstChild); } catch (e) { contentDiv.textContent = messageText; } } else { contentDiv.textContent = messageText; } aiChatMessages.appendChild(messageDiv); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; },
          handleSendMessage: async () => { const messageText = aiChatInput.value.trim(); if (!messageText || currentAiApiCall) return; const apiKey = await getApiKey(); if (!apiKey) { alert("Set Gemini API Key in Settings."); aiChatInput.focus(); return; } if (!currentAiChat) { return; } let contextPrompt = `You are RyxAI, a friendly and helpful coding assistant. Be conversational but concise. You are embedded in a web-based IDE.\n`; contextPrompt += `Current Project: ${currentProject.name || 'Unnamed Project'}.\n`; let currentFileData = null; if (currentOpenFileId && editor) { const file = currentProject.files.find(f=>f.id===currentOpenFileId); const model = editor.getModel(); if (file && model) { currentFileData = file; contextPrompt += `Current File: ${file.name} (Lang: ${file.language}).\n`; const selection = editor.getSelection(); const selectedText = selection && !selection.isEmpty() ? model.getValueInRange(selection) : null; if (selectedText) { contextPrompt += `User has selected this code:\n\`\`\`${file.language || ''}\n${selectedText}\n\`\`\`\n`; } else { const fileContent = model?.getValue() ?? file.content ?? ''; if (fileContent.length < 4000) { contextPrompt += `Full Content of ${file.name}:\n\`\`\`${file.language || ''}\n${fileContent}\n\`\`\`\n`; } else { contextPrompt += `(File ${file.name} content large, provide selection for context).\n`; }}}} const otherFiles = currentProject.files.filter(f => f.id !== currentOpenFileId).map(f => f.name).join(', '); if (otherFiles) contextPrompt += `Other project files (names only): ${otherFiles}.\n`; contextPrompt += `\n--- User Query ---\n${messageText}`; const userMsg = { role: 'user', parts: messageText }; currentAiChat.messages.push(userMsg); aiChatManager.appendMessage(userMsg.role, userMsg.parts); aiChatInput.value = ''; aiSendButton.disabled = true; currentAiApiCall = true; aiChatInput.disabled = true; aiChatMessages.querySelector('.thinking')?.remove(); aiChatManager.appendMessage('model', 'Thinking...'); aiChatMessages.lastChild?.classList.add('thinking'); const historyForApi = currentAiChat.messages.slice(0, -1).filter(msg => !(msg.parts && msg.parts.includes('Thinking...'))).map(msg => ({ role: msg.role, parts: [{ text: Array.isArray(msg.parts) ? msg.parts.map(p => p.text || '').join('') : (msg.parts || '') }] })); const result = await callGeminiApi(contextPrompt, apiKey, historyForApi); aiChatMessages.querySelector('.thinking')?.remove(); let previewData = null; if (!result.error) { const aiMode = aiModeSelector.value; const responseText = result.text || ''; const codeBlockMatch = responseText.match(/```(?:\w*\n)?([\s\S]*?)\n```/); if (aiMode === 'modify' && codeBlockMatch && currentFileData) { previewData = { fileId: currentFileData.id, fileName: currentFileData.name }; } const modelMsg = { role: 'model', parts: responseText, previewData: previewData }; currentAiChat.messages.push(modelMsg); aiChatManager.appendMessage(modelMsg.role, modelMsg.parts, previewData); await saveProjectToStorage(currentProject); } else { aiChatManager.appendMessage('model', `Sorry, error: ${result.error}`); } aiSendButton.disabled = false; currentAiApiCall = false; aiChatInput.disabled = false; aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; },
         handleNewChat: async () => { if (!currentProject) return; const newChatId = generateUUID(); const newChatName = `Chat ${formatDate(Date.now()) || (currentProject.aiChats.length + 1)}`; const newChat = { id: newChatId, name: newChatName, messages: [], createdAt: Date.now() }; currentProject.aiChats.push(newChat); currentProject.currentAiChatId = newChatId; const saved = await saveProjectToStorage(currentProject); if(saved) aiChatManager.loadChats(); },
         handleDeleteChat: async () => { if (!currentProject || !currentAiChat || currentProject.aiChats.length <= 1) { alert("Cannot delete last chat."); return; } if (confirm(`Delete chat "${currentAiChat.name || 'this chat'}"?`)) { currentProject.aiChats = currentProject.aiChats.filter(c => c.id !== currentAiChat.id); currentProject.currentAiChatId = currentProject.aiChats[0]?.id || null; const saved = await saveProjectToStorage(currentProject); if (saved) aiChatManager.loadChats(); } },
@@ -173,60 +167,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const terminalManager = {
         initializeTerminal: () => {
-            if (xtermInstance) return;
-            try {
-                if (!window.Terminal || !window.FitAddon?.FitAddon) { throw new Error("xterm.js or FitAddon not loaded."); }
-                xtermInstance = new window.Terminal({ cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace', theme: getXtermTheme(currentSettings.theme), convertEol: true, scrollback: 1000, });
-                xtermFitAddon = new window.FitAddon.FitAddon();
-                xtermInstance.loadAddon(xtermFitAddon);
-                xtermInstance.open(terminalContainer);
-                terminalManager.fitTerminal();
-                xtermInstance.writeln('\x1b[1;34mWelcome to RyxIDE Terminal (powered by Backend)\x1b[0m');
-                xtermInstance.writeln('Enter commands to execute remotely.');
-                terminalManager.prompt();
-                xtermInstance.onData((data) => {
-                    const code = data.charCodeAt(0);
-                    if (isTerminalProcessing) return;
-                    if (code === 13) {
-                        xtermInstance.writeln('');
-                        if (currentTerminalInputBuffer.trim().length > 0) { terminalManager.executeCommand(currentTerminalInputBuffer); }
-                        else { terminalManager.prompt(); }
-                        currentTerminalInputBuffer = '';
-                    } else if (code === 127) { if (currentTerminalInputBuffer.length > 0) { xtermInstance.write('\b \b'); currentTerminalInputBuffer = currentTerminalInputBuffer.slice(0, -1); } }
-                    else if (code >= 32 || data === '\t') { currentTerminalInputBuffer += data; xtermInstance.write(data); }
-                });
-            } catch (error) { console.error("Terminal Init Error:", error); terminalContainer.textContent = `Error initializing terminal: ${error.message}`; updateStatus("Terminal Init Failed!", "error"); }
+            if (jqTerminal || typeof $ === 'undefined' || !$.terminal) {
+                 if(!window.jQuery || !window.jQuery.terminal) {
+                    console.error("jQuery or jQuery Terminal library not loaded.");
+                    terminalContainer.textContent = 'Error: jQuery Terminal library not found.';
+                    return;
+                }
+            }
+             jqTerminal = $(terminalContainer).terminal(async (command, term) => {
+                 if (command.trim()) {
+                     await terminalManager.executeCommand(command.trim(), term);
+                 } else {
+                     term.echo('');
+                 }
+             }, {
+                 greetings: 'RyxIDE Backend Terminal\nUse "run <filename>" or standard Linux commands.',
+                 prompt: '[[b;green;]ryxide] $ ',
+                 keymap: {
+                     'CTRL+C': function(e, original) {
+                         if (!jqTerminal?.paused()) { jqTerminal.echo('^C'); }
+                         else { original(); }
+                     }
+                 },
+                 outputLimit: 200,
+                 scrollOnEcho: true,
+                 height: '100%',
+                 width: '100%',
+                 exceptionHandler: function(exception) {
+                     jqTerminal?.error(String(exception));
+                 },
+                 formatters: $.terminal.defaults.formatters.concat('html'),
+                 finalize: (div) => {
+                     terminalManager.applyTheme(div);
+                 }
+             });
+             terminalManager.applyTheme();
         },
-        fitTerminal: () => { try { xtermFitAddon?.fit(); } catch (e) { console.warn("Terminal fit error:", e); } },
-        prompt: () => { if(isTerminalProcessing) return; xtermInstance?.write('\r\n\x1b[1;32mryxide\x1b[0m $ '); },
-        executeCommand: async (command) => {
-             if (!TERMINAL_EXECUTE_URL) { xtermInstance?.writeln('\r\n\x1b[1;31mError: Terminal backend URL not configured.\x1b[0m'); terminalManager.prompt(); return; }
+        applyTheme: (termDiv = null) => {
+            const container = termDiv || $(terminalContainer).find('.terminal');
+            if (!container.length) return;
+            const themeClass = currentSettings.theme === 'vs' ? 'light' : 'dark';
+            container.removeClass('light dark').addClass(themeClass);
+        },
+        fitTerminal: () => {},
+        executeCommand: async (command, term) => {
+             if (!TERMINAL_EXECUTE_URL) { term.error("Terminal backend URL not configured."); return; }
+             if (isTerminalProcessing) return;
              isTerminalProcessing = true;
-             xtermInstance?.writeln(`\r\n\x1b[1;33mExecuting: ${command}\x1b[0m`); updateStatus(`Running command...`, 'info', 0); showLoader(loaderOverlay, loaderText, "Running Command...");
+             term.pause();
+             showLoader(loaderOverlay, loaderText, "Running Command...");
+             updateStatus(`Running command...`, 'info', 0);
              try {
                  const response = await fetch(TERMINAL_EXECUTE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: command }) });
                  const result = await response.json();
-                 if (result.stdout) xtermInstance?.write('\r\n' + result.stdout.replace(/\n/g, '\r\n'));
-                 if (result.stderr) xtermInstance?.write(`\r\n\x1b[1;31m${result.stderr.replace(/\n/g, '\r\n')}\x1b[0m`);
-                 if (!response.ok || result.exitCode !== 0) { updateStatus(`Cmd failed (Code: ${result.exitCode || response.status})`, 'error', 5000); xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Command failed - Exit: ${result.exitCode ?? 'N/A'}]\x1b[0m`); }
-                 else { updateStatus(`Command finished`, 'success'); xtermInstance?.writeln(`\r\n\x1b[1;32m[RyxIDE: Command finished - Exit: 0]\x1b[0m`); }
-             } catch (error) { console.error("Terminal execute error:", error); xtermInstance?.writeln(`\r\n\x1b[1;31m[RyxIDE: Network/Fetch Error: ${error.message}]\x1b[0m`); updateStatus('Command Network Error', 'error', 5000); }
-             finally { hideLoader(loaderOverlay); isTerminalProcessing = false; terminalManager.prompt(); }
+                 if (result.stdout) term.echo(result.stdout);
+                 if (result.stderr) term.error(result.stderr);
+                 if (!response.ok || result.exitCode !== 0) { updateStatus(`Cmd failed (Code: ${result.exitCode || response.status})`, 'error', 5000); term.error(`[[b;red;]Cmd failed - Exit: ${result.exitCode ?? 'N/A'}]`); }
+                 else { updateStatus(`Command finished`, 'success'); }
+             } catch (error) { term.error(`[[b;red;]Network/Fetch Error: ${error.message}]`); updateStatus('Command Network Error', 'error', 5000); }
+             finally { hideLoader(loaderOverlay); term.resume(); isTerminalProcessing = false; }
         },
         executeCommandViaRun: async (lang, code) => {
-             const commandMap = { ruby: `ruby`, c: `gcc temp.c -o temp_c -lm && ./temp_c`, cpp: `g++ temp.cpp -o temp_cpp -lstdc++ && ./temp_cpp`, csharp: `mcs temp.cs -out:temp_cs.exe && mono temp_cs.exe`, shell: `sh` };
+             if (!jqTerminal) { alert("Terminal not initialized."); return; }
+             const commandMap = { python: `python3`, ruby: `ruby`, c: `gcc temp.c -o temp_c -lm && ./temp_c`, cpp: `g++ temp.cpp -o temp_cpp -lstdc++ && ./temp_cpp`, csharp: `mcs temp.cs -out:temp_cs.exe && mono temp_cs.exe`, shell: `sh` };
              const cmdPrefix = commandMap[lang];
              if (!cmdPrefix) { alert(`Execution via terminal not set for ${lang}`); return; }
-             if (!xtermInstance) { alert("Terminal not initialized."); return; }
-             const fileName = `temp.${{ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
+
+             const fileName = `temp.${{python: 'py', ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
              const safeCode = btoa(unescape(encodeURIComponent(code)));
              const writeCmd = `echo '${safeCode}' | base64 -d > ${fileName}`;
              const runCmd = `${cmdPrefix} ${fileName}`;
              const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''}`;
-             const fullCommand = `${writeCmd} && ${runCmd} ; ${cleanupCmd}\n`;
-             terminalManager.sendCommandToTerminal(fullCommand);
-        },
-        sendCommandToTerminal: (command) => { if (xtermInstance && !isTerminalProcessing) { xtermInstance.write(command); } else if (!xtermInstance) { alert("Terminal not ready."); } }
+             const fullCommand = `${writeCmd} && ${runCmd} ; ${cleanupCmd}`;
+
+             jqTerminal.exec(fullCommand);
+        }
     };
 
     const runtimeManager = {
@@ -235,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
         runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
         runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); if(outputConsole) outputConsole.textContent=''; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputConsole && !outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
-        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); const targetTerminal = xtermInstance; if (targetTerminal) { targetTerminal.writeln('\r\n\x1b[1;34m--- Sending Python to Backend ---\x1b[0m'); targetTerminal.focus(); } else { console.warn("Terminal not ready for Python output."); } try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); const writer = targetTerminal || { write: (t)=>{console.log(t)}, writeln: (t)=>{console.log(t)} }; writer.writeln('\r\n\x1b[1;34m--- Backend Response Start ---\x1b[0m'); if (result.stdout) writer.write(result.stdout.replace(/\n/g, '\r\n')); if (result.stderr) writer.write(`\r\n\x1b[1;31m--- STDERR ---\r\n${result.stderr.replace(/\n/g, '\r\n')}\x1b[0m`); const exitMessage = result.exit_code === 0 ? `\r\n\x1b[1;32m--- Python finished (Backend) [Exit Code: 0] ---\x1b[0m` : `\r\n\x1b[1;31m--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---\x1b[0m`; writer.writeln(exitMessage); updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { writer.writeln(`\r\n\x1b[1;31mBackend HTTP Error ${response.status}: ${result.error || response.statusText}\x1b[0m`); updateStatus('Python Backend Error', 'error'); } } catch (error) { const writer = xtermInstance || console; writer.error(`\r\n--- ERROR ---\r\nNetwork/Fetch Error: ${error.message}\x1b[0m`); updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); if(xtermInstance) xtermInstance.write('\r\n'); } },
+        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); const targetTerminal = jqTerminal; if (targetTerminal) { targetTerminal.echo('\n[[b;blue;] --- Sending Python to Backend --- ]'); } else { console.warn("Terminal not ready for Python output."); } try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); const writer = targetTerminal || { echo: (t)=>{console.log(t)}, error: (t)=>{console.error(t)} }; writer.echo('\n[[b;blue;] --- Backend Response Start --- ]'); if (result.stdout) writer.echo(result.stdout); if (result.stderr) writer.error(`--- STDERR ---\n${result.stderr}`); const exitMessage = result.exit_code === 0 ? `\n[[b;green;]--- Python finished (Backend) [Exit Code: 0] --- ]` : `\n[[b;red;]--- Python failed (Backend) [Exit Code: ${result.exit_code}] --- ]`; writer.echo(exitMessage); updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { writer.error(`Backend HTTP Error ${response.status}: ${result.error || response.statusText}`); updateStatus('Python Backend Error', 'error'); } } catch (error) { const writer = jqTerminal || console; writer.error(`\n--- ERROR ---\nNetwork/Fetch Error: ${error.message}`); updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); } },
         runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
     };
 
@@ -285,8 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCredits() {
-        const features = new Set(['Monaco', 'Gemini', 'xterm.js', 'Render']);
+        const features = new Set(['Monaco', 'Gemini', 'jQuery Terminal', 'Render']);
         if (typeof marked !== 'undefined') features.add('Marked');
+        if (typeof $ !== 'undefined' && $.terminal) features.add('jQuery');
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
