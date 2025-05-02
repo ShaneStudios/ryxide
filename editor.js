@@ -77,11 +77,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         
-        if (typeof window.jQuery === 'function') {
-            window.jQuery(document).ready(terminalManager.initializeTerminal);
+        if (typeof window.jQuery === 'function' && typeof window.jQuery.fn.terminal === 'function') {
+             terminalManager.initializeTerminal();
         } else {
-            console.error("jQuery not loaded, cannot initialize terminal.");
-            terminalContainer.textContent = 'Error: jQuery library failed to load.';
+             window.jQuery(document).ready(terminalManager.initializeTerminal);
         }
         
         setupMonaco();
@@ -170,11 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const terminalManager = {
         initializeTerminal: () => {
-            if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) {
-                if(!window.jQuery || !window.jQuery.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
-                else { console.warn("jQuery.terminal not ready yet, will retry."); setTimeout(terminalManager.initializeTerminal, 100); return; }
+            if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.fn.terminal) {
+                 if(!window.jQuery || !window.jQuery.fn.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
+                 else { setTimeout(terminalManager.initializeTerminal, 100); return; }
             }
-            jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
+             jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
                  if (command.trim()) {
                      await terminalManager.executeCommand(command.trim(), term);
                  } else {
@@ -192,8 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
              terminalManager.applyTheme();
         },
         applyTheme: (termDiv = null) => {
-            const container = termDiv || (typeof window.jQuery !== 'undefined' ? window.jQuery(terminalContainer).find('.terminal') : null);
-            if (!container?.length || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) return;
+            const $ = window.jQuery;
+            if (!$) return;
+            const container = termDiv || $(terminalContainer).find('.terminal');
+            if (!container.length || !$.terminal) return;
             const theme = currentSettings.theme === 'vs' ? 'light' : 'dark';
             const themeOptions = theme === 'light' ? { cssVars: { '--background': '#ffffff', '--color': '#000000', '--prompt-color':'#0000FF'} } : { cssVars: { '--background': '#1e1e1e', '--color': '#cccccc', '--prompt-color':'#64d97a' } };
             jqTerminal?.option('theme', theme, themeOptions);
