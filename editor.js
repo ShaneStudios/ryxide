@@ -1,3 +1,6 @@
+import { Terminal } from 'https://cdn.jsdelivr.net/npm/jquery.terminal@2.36.1/js/jquery.terminal.min.js';
+import { FitAddon } from 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.10.0/lib/addon-fit.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     const editorContainer = document.getElementById('editor-container');
     const runButton = document.getElementById('run-button');
@@ -111,10 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
         terminalManager.applyTheme();
     }
 
-    function getXtermTheme(editorTheme) {
-        return editorTheme === 'vs' ? { background: '#ffffff', foreground: '#000000', cursor: '#000000', selectionBackground: '#add6ff', selectionForeground: '#000000' } : { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#264f78', selectionForeground: '#ffffff' };
-    }
-
     function setupMonaco() {
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs' }});
         window.MonacoEnvironment = { getWorkerUrl: function (moduleId, label) { const workerMap = { 'editorWorkerService': 'vs/editor/editor.worker.js', 'css': 'vs/language/css/css.worker.js', 'html': 'vs/language/html/html.worker.js', 'json': 'vs/language/json/json.worker.js', 'typescript': 'vs/language/typescript/ts.worker.js', 'javascript': 'vs/language/typescript/ts.worker.js' }; const workerBase = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/'; const workerPath = workerMap[label] || workerMap.editorWorkerService; return `${workerBase}${workerPath}`; }};
@@ -150,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
          const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
          tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
-         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(true); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
     }
 
     const aiChatManager = {
@@ -167,10 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const terminalManager = {
         initializeTerminal: () => {
-            if (jqTerminal || typeof $ === 'undefined' || !$.terminal) {
-                 if(!window.jQuery || !window.jQuery.terminal) { console.error("jQuery or jQuery Terminal not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
+            if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) {
+                 if(!window.jQuery || !window.jQuery.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
             }
-             jqTerminal = $(terminalContainer).terminal(async (command, term) => {
+            jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
                  if (command.trim()) {
                      await terminalManager.executeCommand(command.trim(), term);
                  } else {
@@ -200,8 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
              terminalManager.applyTheme();
         },
         applyTheme: (termDiv = null) => {
-            const container = termDiv || $(terminalContainer).find('.terminal');
-            if (!container.length || typeof $ === 'undefined' || !$.terminal) return;
+            const container = termDiv || window.jQuery(terminalContainer).find('.terminal');
+            if (!container.length || typeof window.jQuery === 'undefined' || !window.jQuery.terminal) return;
             const theme = currentSettings.theme === 'vs' ? 'light' : 'dark';
             const themeOptions = theme === 'light' ? { cssVars: { '--background': '#ffffff', '--color': '#000000', '--prompt-color':'#0000FF'} } : { cssVars: { '--background': '#1e1e1e', '--color': '#cccccc', '--prompt-color':'#64d97a' } };
             jqTerminal?.option('theme', theme, themeOptions);
