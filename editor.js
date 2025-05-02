@@ -3,8 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const runButton = document.getElementById('run-button');
     const runExternalButton = document.getElementById('run-external-button');
     const previewFrame = document.getElementById('preview-frame');
-    const terminalContainer = document.getElementById('terminal-container');
-    const outputConsole = document.getElementById('output-console');
+    const outputDisplay = document.getElementById('output-display');
     const loaderOverlay = document.getElementById('loader-overlay');
     const loaderText = document.getElementById('loader-text');
     const creditsElement = document.getElementById('credits');
@@ -50,6 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const shortcutsCloseButton = document.getElementById('shortcuts-close-button');
 
+    const terminalOutput = document.getElementById('terminal-output');
+    const terminalInput = document.getElementById('terminal-input');
+    const terminalPrompt = document.getElementById('terminal-prompt');
+
     let editor = null;
     let currentProject = null;
     let currentOpenFileId = null;
@@ -59,11 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let aiApplyAction = null;
     let currentSettings = {};
     let autoSaveTimeout = null;
-    let jqTerminal = null;
-    let isTerminalProcessing = false;
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
-    const TERMINAL_EXECUTE_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
 
     async function initializeEditorPage() {
         const projectId = await getCurrentProjectId();
@@ -76,12 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
         updateCredits();
         setupBaseEventListeners();
-        if (typeof window.jQuery === 'function' && typeof window.jQuery.fn.terminal === 'function') {
-             terminalManager.initializeTerminal();
-        } else {
-             console.warn("jQuery Terminal not ready on DOMContentLoaded, delaying init via jQuery(document).ready().");
-             window.jQuery(document).ready(terminalManager.initializeTerminal);
-        }
+        TerminalManager.initialize(terminalOutput, terminalInput, terminalPrompt);
         setupMonaco();
     }
 
@@ -107,13 +102,11 @@ document.addEventListener('DOMContentLoaded', () => {
          applySettings();
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
-         terminalManager.fitTerminal();
     }
 
      function applySettings() {
         if (editor) { monaco.editor.setTheme(currentSettings.theme); editor.updateOptions({ fontSize: currentSettings.fontSize || 14, tabSize: currentSettings.tabSize || 4, renderWhitespace: currentSettings.renderWhitespace || 'none', wordWrap: currentSettings.wordWrap || 'on' }); }
         themeSelectorHeader.value = currentSettings.theme;
-        terminalManager.applyTheme();
     }
 
     function setupMonaco() {
@@ -139,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileManager = {
         renderList: () => { if (!currentProject) return; fileListUl.innerHTML = ''; currentProject.files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => { const iconClass = fileManager.getIconClass(file.name); const icon = createDOMElement('i', { className: `file-icon ${iconClass}` }); const nameSpan = createDOMElement('span', { textContent: file.name }); const li = createDOMElement('li', { dataset: { fileId: file.id }, title: file.name, children: [icon, nameSpan] }); if (file.id === currentOpenFileId) li.classList.add('active'); fileListUl.appendChild(li); }); const fileSelected = !!currentOpenFileId; deleteFileButton.disabled = !fileSelected; renameFileButton.disabled = !fileSelected; },
         getIconClass: (filename) => { const lang = getLanguageFromFilename(filename); const iconMap = {html:'fab fa-html5',css:'fab fa-css3-alt',javascript:'fab fa-js-square',python:'fab fa-python',markdown:'fab fa-markdown',json:'fas fa-file-code',java:'fab fa-java',csharp:'fas fa-hashtag',cpp:'fas fa-plus',c:'fas fa-copyright',rust:'fab fa-rust',go:'fab fa-google',php:'fab fa-php',rb:'fas fa-gem',sh:'fas fa-terminal',xml:'fas fa-file-code',yaml:'fas fa-file-alt'}; return iconMap[lang] || 'fas fa-file'; },
-        open: (fileId, force = false) => { if (!currentProject || !editor) return; if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { editor.setValue(`// Error: File not found (ID: ${fileId})`); if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return; } currentOpenFileId = file.id; currentProject.openFileId = file.id; const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`); let model = monaco.editor.getModel(modelUri); if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); } else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); } editor.setModel(model); editor.focus(); previewFrame.srcdoc = ''; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); },
+        open: (fileId, force = false) => { if (!currentProject || !editor) return; if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { editor.setValue(`// Error: File not found (ID: ${fileId})`); if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return; } currentOpenFileId = file.id; currentProject.openFileId = file.id; const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`); let model = monaco.editor.getModel(modelUri); if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); } else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); } editor.setModel(model); editor.focus(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); },
         handleNew: () => { fileNameInput.value = ''; showModal(modalBackdrop, newFileModal); },
         confirmNew: async () => { const fileName = fileNameInput.value.trim(); if (!fileName || !currentProject) { alert("Invalid file name."); return; } if (currentProject.files.some(f => f.name.toLowerCase() === fileName.toLowerCase())) { alert(`File "${fileName}" already exists.`); fileNameInput.focus(); return; } const fileLang = getLanguageFromFilename(fileName); const newFile = { id: generateUUID(), name: fileName, language: fileLang, content: starterContentByLanguage[fileLang] || '' }; currentProject.files.push(newFile); currentProject.openFileId = newFile.id; const saved = await saveProjectToStorage(currentProject); if(saved) { fileManager.renderList(); fileManager.open(newFile.id, true); setEditorDirty(true); hideModal(modalBackdrop, newFileModal); } },
         handleRename: (fileIdToRename = null) => { const fileId = fileIdToRename || currentOpenFileId; if (!currentProject || !fileId) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { return; } newFileNameInput.value = file.name; renameFileModal.dataset.fileId = fileId; showModal(modalBackdrop, renameFileModal); },
@@ -150,8 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleTabSwitch(event) {
          const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
          tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
+
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
-         else if (tabName === 'terminal' && jqTerminal) { jqTerminal.focus(true); terminalManager.fitTerminal(); }         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         else if (tabName === 'output') { outputDisplay.scrollTop = outputDisplay.scrollHeight; }
+         else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
+         else if (tabName === 'terminal') { terminalInput.focus(); }
     }
 
     const aiChatManager = {
@@ -166,80 +162,14 @@ document.addEventListener('DOMContentLoaded', () => {
          confirmApplyCode: async () => { if (!aiApplyAction || !editor || !currentProject) { alert("Cannot apply changes."); hideModal(modalBackdrop, aiApplyModal); return; } const { fileId, newContent } = aiApplyAction; const targetFile = currentProject.files.find(f => f.id === fileId); if (!targetFile) { alert(`Target file not found.`); hideModal(modalBackdrop, aiApplyModal); return; } if (currentOpenFileId === fileId) { const model = editor.getModel(); if (model) { const fullRange = model.getFullModelRange(); editor.executeEdits('ai-apply', [{ range: fullRange, text: newContent, forceMoveMarkers: true }]); setEditorDirty(true); updateStatus(`AI applied to editor for ${targetFile.name}.`, 'success'); } else { alert("Error: Editor model not found."); } } else { targetFile.content = newContent; const saved = await saveProjectToStorage(currentProject); if(saved) updateStatus(`AI applied & saved to ${targetFile.name}.`, 'success'); else updateStatus(`Applied to ${targetFile.name}, but save failed!`, 'error'); } hideModal(modalBackdrop, aiApplyModal); aiApplyAction = null; }
     };
 
-    const terminalManager = {
-        initializeTerminal: () => {
-            if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.fn.terminal) {
-                 if(!window.jQuery || !window.jQuery.fn.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
-                 else { setTimeout(terminalManager.initializeTerminal, 100); return; }             }
-             jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
-                 if (command.trim()) {
-                     await terminalManager.executeCommand(command.trim(), term);
-                 } else {
-                     term.echo('');
-                 }
-             }, {
-                 greetings: 'RyxIDE Backend Terminal\nUse "run <filename>" or standard Linux commands.',
-                 prompt: '[[b;green;]ryxide] $ ',
-                 keymap: { 'CTRL+C': function(e, original) { if (!jqTerminal?.paused()) { jqTerminal.echo('^C'); } else { original(); } } },
-                 outputLimit: 200, scrollOnEcho: true, height: '100%', width: '100%',
-                 exceptionHandler: function(exception) { jqTerminal?.error(String(exception)); },
-                 formatters: $.terminal.defaults.formatters.concat('html'),
-                 finalize: (div) => { terminalManager.applyTheme(div); }
-             });
-             terminalManager.applyTheme();
-        },
-        applyTheme: (termDiv = null) => {
-            const $ = window.jQuery;
-            if (!$) return;
-            const container = termDiv || $(terminalContainer).find('.terminal');
-            if (!container.length || !$.terminal) return;
-            const theme = currentSettings.theme === 'vs' ? 'light' : 'dark';
-            const themeOptions = theme === 'light' ? { cssVars: { '--background': '#ffffff', '--color': '#000000', '--prompt-color':'#0000FF'} } : { cssVars: { '--background': '#1e1e1e', '--color': '#cccccc', '--prompt-color':'#64d97a' } };
-            jqTerminal?.option('theme', theme, themeOptions);
-        },
-        fitTerminal: () => {},
-        executeCommand: async (command, term) => {
-             if (!TERMINAL_EXECUTE_URL) { term.error("Terminal backend URL not configured."); return; }
-             if (isTerminalProcessing) return;
-             isTerminalProcessing = true;
-             term.pause();
-             showLoader(loaderOverlay, loaderText, "Running Command...");
-             updateStatus(`Running command...`, 'info', 0);
-             try {
-                 const response = await fetch(TERMINAL_EXECUTE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: command }) });
-                 const result = await response.json();
-                 if (result.stdout) term.echo(result.stdout);
-                 if (result.stderr) term.error(result.stderr);
-                 if (!response.ok || result.exitCode !== 0) { updateStatus(`Cmd failed (Code: ${result.exitCode || response.status})`, 'error', 5000); term.error(`[[b;red;]Cmd failed - Exit: ${result.exitCode ?? 'N/A'}]`); }
-                 else { updateStatus(`Command finished`, 'success'); }
-             } catch (error) { term.error(`[[b;red;]Network/Fetch Error: ${error.message}]`); updateStatus('Command Network Error', 'error', 5000); }
-             finally { hideLoader(loaderOverlay); term.resume(); isTerminalProcessing = false; }
-        },
-        executeCommandViaRun: async (lang, code) => {
-             if (!jqTerminal) { alert("Terminal not initialized."); return; }
-             const commandMap = { ruby: `ruby`, c: `gcc temp.c -o temp_c -lm && ./temp_c`, cpp: `g++ temp.cpp -o temp_cpp -lstdc++ && ./temp_cpp`, csharp: `mcs temp.cs -out:temp_cs.exe && mono temp_cs.exe`, shell: `sh` };
-             const cmdPrefix = commandMap[lang];
-             if (!cmdPrefix) { alert(`Execution via terminal not set for ${lang}`); return; }
-
-             const fileName = `temp.${{ruby:'rb', c:'c', cpp:'cpp', csharp:'cs', shell:'sh'}[lang]}`;
-             const safeCode = btoa(unescape(encodeURIComponent(code)));
-             const writeCmd = `echo '${safeCode}' | base64 -d > ${fileName}`;
-             const runCmd = `${cmdPrefix} ${fileName}`;
-             const cleanupCmd = `rm ${fileName} ${lang==='c'?'temp_c ':''}${lang==='cpp'?'temp_cpp ':''}${lang==='csharp'?'temp_cs.exe ':''}`;
-             const fullCommand = `${writeCmd} && ${runCmd} ; ${cleanupCmd}`;
-
-             jqTerminal.exec(fullCommand);
-        }
-    };
-
     const runtimeManager = {
-        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } terminalManager.executeCommandViaRun(lang, code); },
+        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } outputDisplay.textContent = `Direct execution for ${lang} is not supported.\nUse the 'Run Externally' button if available.`; updateStatus(`Run not supported for ${lang}`, 'warning'); },
         runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
         runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
         runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
-        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); if(outputConsole) outputConsole.textContent=''; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputConsole.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputConsole.textContent += p + args.join(' ') + '\n'; } outputConsole.scrollTop = outputConsole.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputConsole && !outputConsole.textContent.includes('--- Script Finished ---') && !outputConsole.textContent.includes('Error:')) { outputConsole.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
-        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); const targetTerminal = jqTerminal; if (targetTerminal) { targetTerminal.echo('\n[[b;blue;] --- Sending Python to Backend --- ]'); } else { console.warn("Terminal not ready for Python output."); } try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); const writer = targetTerminal || { echo: (t)=>{console.log(t)}, error: (t)=>{console.error(t)} }; writer.echo('\n[[b;blue;] --- Backend Response Start --- ]'); if (result.stdout) writer.echo(result.stdout); if (result.stderr) writer.error(`--- STDERR ---\n${result.stderr}`); const exitMessage = result.exit_code === 0 ? `\n[[b;green;]--- Python finished (Backend) [Exit Code: 0] --- ]` : `\n[[b;red;]--- Python failed (Backend) [Exit Code: ${result.exit_code}] --- ]`; writer.echo(exitMessage); updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { writer.error(`Backend HTTP Error ${response.status}: ${result.error || response.statusText}`); updateStatus('Python Backend Error', 'error'); } } catch (error) { const writer = jqTerminal || console; writer.error(`\n--- ERROR ---\nNetwork/Fetch Error: ${error.message}`); updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); } },
-        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputConsole.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
+        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); outputDisplay.textContent='--- JavaScript Output ---\n'; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputDisplay.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputDisplay.textContent += p + args.join(' ') + '\n'; } outputDisplay.scrollTop = outputDisplay.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputDisplay && !outputDisplay.textContent.includes('--- Script Finished ---') && !outputDisplay.textContent.includes('Error:')) { outputDisplay.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
+        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); outputDisplay.textContent = '--- Sending Python to Backend ---\n'; try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); outputDisplay.textContent += '\n--- Backend Response Start ---\n'; if (result.stdout) outputDisplay.textContent += result.stdout; if (result.stderr) outputDisplay.textContent += `\n--- STDERR ---\n${result.stderr}`; const exitMessage = result.exit_code === 0 ? `\n--- Python finished (Backend) [Exit Code: 0] ---` : `\n--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---`; outputDisplay.textContent += exitMessage; updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { outputDisplay.textContent += `\nBackend HTTP Error ${response.status}: ${result.error || response.statusText}`; updateStatus('Python Backend Error', 'error'); } } catch (error) { outputDisplay.textContent += `\n--- ERROR ---\nNetwork/Fetch Error: ${error.message}`; updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); outputDisplay.scrollTop = outputDisplay.scrollHeight; } },
+        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputDisplay.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
     };
 
     const editorActions = {
@@ -271,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aiApplyConfirmButton.addEventListener('click', aiChatManager.confirmApplyCode);
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
-        window.addEventListener('resize', () => { terminalManager.fitTerminal(); if (editor) editor.layout(); });
+        window.addEventListener('resize', () => { if (editor) editor.layout(); });
     }
 
     function setupEditorSpecificEventListeners() {
@@ -288,9 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCredits() {
-        const features = new Set(['Monaco', 'Gemini', 'jQuery Terminal', 'Render']);
+        const features = new Set(['Monaco', 'Gemini', 'Render']);
         if (typeof marked !== 'undefined') features.add('Marked');
-        if (typeof window.jQuery !== 'undefined' && window.jQuery.terminal) features.add('jQuery');
         if (typeof JSZip !== 'undefined') features.add('JSZip');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
@@ -300,10 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
          const lang = file?.language || 'plaintext';
          const runnableInternalClient = ['html', 'css', 'javascript', 'markdown'].includes(lang);
          const runnableBackendPython = lang === 'python';
-         const runnableBackendTerminal = ['ruby', 'csharp', 'c', 'cpp', 'shell'].includes(lang);
-         const runnableExternalKey = lang === 'java' ? 'java' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : lang === 'rust' ? 'rust' : null;
+         const runnableExternalKey = lang === 'java' ? 'java' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : lang === 'rust' ? 'rust' : lang === 'c' ? 'c' : lang === 'cpp' ? 'cpp' : lang === 'csharp' ? 'csharp' : lang === 'ruby' ? 'ruby' : null;
          const externalLink = runnableExternalKey ? externalSandboxLinks[runnableExternalKey] : null;
-         let canRun = runnableInternalClient || runnableBackendPython || runnableBackendTerminal;
+         let canRun = runnableInternalClient || runnableBackendPython;
          runButton.disabled = !canRun;
          runButton.style.display = 'inline-flex';
          runButton.title = canRun ? `Run/Preview ${lang}` : `Run not supported for ${lang}`;
