@@ -76,13 +76,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.title = `RyxIDE - ${currentProject.name || 'Editor'}`;
         updateCredits();
         setupBaseEventListeners();
-        
         if (typeof window.jQuery === 'function' && typeof window.jQuery.fn.terminal === 'function') {
              terminalManager.initializeTerminal();
         } else {
+             console.warn("jQuery Terminal not ready on DOMContentLoaded, delaying init via jQuery(document).ready().");
              window.jQuery(document).ready(terminalManager.initializeTerminal);
         }
-        
         setupMonaco();
     }
 
@@ -171,8 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTerminal: () => {
             if (jqTerminal || typeof window.jQuery === 'undefined' || !window.jQuery.fn.terminal) {
                  if(!window.jQuery || !window.jQuery.fn.terminal) { console.error("jQuery or jQuery Terminal library not loaded."); terminalContainer.textContent = 'Error: jQuery Terminal library not found.'; return; }
-                 else { setTimeout(terminalManager.initializeTerminal, 100); return; }
-            }
+                 else { setTimeout(terminalManager.initializeTerminal, 100); return; }             }
              jqTerminal = window.jQuery(terminalContainer).terminal(async (command, term) => {
                  if (command.trim()) {
                      await terminalManager.executeCommand(command.trim(), term);
