@@ -17,10 +17,8 @@ const TerminalManager = (() => {
             console.error("Terminal elements not found during initialization.");
             return;
         }
-        if (NODE_BACKEND_URL.includes('YOUR_NODE_PROXY_BACKEND_URL')) {
-             console.warn("Terminal NODE_BACKEND_URL needs to be updated in terminal.js!");
-             displayErrorOutput("ERROR: Terminal backend URL is not configured.\n");
-        }
+
+        console.log("Terminal Initialized. Node Backend Target:", NODE_BACKEND_URL);
 
         terminalInputElement.addEventListener('keydown', handleKeyDown);
         terminalOutputElement.addEventListener('click', () => {
@@ -119,10 +117,6 @@ const TerminalManager = (() => {
              displayHelp();
              return;
         }
-         if (NODE_BACKEND_URL.includes('YOUR_NODE_PROXY_BACKEND_URL')) {
-              displayErrorOutput("ERROR: Terminal backend URL is not configured.\n");
-              return;
-         }
 
         isExecuting = true;
         setPromptBusy(true);
@@ -143,13 +137,19 @@ const TerminalManager = (() => {
 
             if (!response.ok) {
                  let errorData;
-                 try { errorData = await response.json(); } catch { errorData = { error: await response.text() }; }
-                 console.error("Node Backend Error:", errorData);
-                 displayErrorOutput(`Error: ${response.status} ${response.statusText}\n`);
-                 if (errorData.error) displayErrorOutput(`Backend: ${errorData.error}\n`);
-                 if (errorData.details) displayErrorOutput(`Details: ${errorData.details}\n`);
-                 if (errorData.stderr) displayErrorOutput(`Stderr: ${errorData.stderr}\n`);
-                 if (errorData.stdout) displayOutput(`Stdout: ${errorData.stdout}\n`);
+                 let errorText = `Error: ${response.status} ${response.statusText}\n`;
+                 try {
+                      errorData = await response.json();
+                      if (errorData.error) errorText += `Backend Error: ${errorData.error}\n`;
+                      if (errorData.details) errorText += `Details: ${errorData.details}\n`;
+                      if (errorData.stderr) displayErrorOutput(`Stderr: ${errorData.stderr}\n`);
+                      if (errorData.stdout) displayOutput(`Stdout: ${errorData.stdout}\n`);
+                 } catch (e) {
+                      const textError = await response.text();
+                      errorText += `Response Body: ${textError}\n`;
+                 }
+                 console.error("Node Backend Request Failed:", response.status, errorText);
+                 displayErrorOutput(errorText);
 
             } else if (contentType && contentType.includes("application/zip")) {
                  displayOutput("Received file archive. Unpacking...\n");
@@ -166,27 +166,30 @@ const TerminalManager = (() => {
                       displayErrorOutput(result.stderr);
                       if (!result.stderr.endsWith('\n')) displayOutput('\n');
                   }
-                  if (result.error && response.status >= 400){
-                        displayErrorOutput(`Error: ${result.error}\n`);
+                  if (result.error){
+                        displayErrorOutput(`Error Field: ${result.error}\n`);
                   }
                    if (!result.stdout && !result.stderr && !result.error) {
-
                    }
 
             } else {
                  const textResponse = await response.text();
-                 console.warn("Received unexpected response type:", contentType, textResponse);
-                 displayErrorOutput(`Error: Unexpected response type from backend (${contentType || 'unknown'}).\n`);
+                 console.warn("Received unexpected successful response type:", contentType, textResponse);
+                 displayErrorOutput(`Warn: Unexpected response type from backend (${contentType || 'unknown'}).\n`);
                  displayOutput(textResponse + '\n');
             }
 
         } catch (error) {
-            console.error("Terminal fetch error:", error);
-            displayErrorOutput(`Network Error: Failed to connect to Node backend.\n${error.message}\n`);
+            console.error("Terminal fetch network error:", error);
+            displayErrorOutput(`Network Error: Failed to connect to Node backend.\nCheck browser console & backend status.\n${error.message}\n`);
         } finally {
             isExecuting = false;
             setPromptBusy(false);
             terminalInputElement.disabled = false;
+            if (terminalOutputElement.lastChild && terminalOutputElement.lastChild.textContent && !terminalOutputElement.lastChild.textContent.endsWith('\n')) {
+                 displayOutput('\n');
+            }
+            displayOutput(getPromptText());
             scrollToBottom();
             ensureInputFocus();
         }
@@ -218,12 +221,14 @@ const TerminalManager = (() => {
            }
 
           try {
+               displayOutput("Loading zip data...\n");
                const zip = await JSZip.loadAsync(zipBlob);
                let fileCount = 0;
                const addedFiles = [];
                let updatedProject = { ...project, files: [...project.files] };
+               displayOutput("Unpacking files...\n");
 
-               await Promise.all(Object.keys(zip.files).map(async (relativePath) => {
+               const filePromises = Object.keys(zip.files).map(async (relativePath) => {
                     const zipEntry = zip.files[relativePath];
                     if (!zipEntry.dir) {
                          try {
@@ -249,16 +254,20 @@ const TerminalManager = (() => {
                               displayErrorOutput(`Error unpacking file: ${relativePath}\n`);
                          }
                     }
-               }));
+               });
+
+               await Promise.all(filePromises);
 
                if (fileCount > 0) {
                     displayOutput(`Successfully unpacked and added/updated ${fileCount} file(s):\n`);
                     addedFiles.forEach(f => displayOutput(`  - ${f}\n`));
                     window.currentProject = updatedProject;
                     fileManager.renderList();
+                    displayOutput("Saving updated project...\n");
                     const saved = await saveProject(updatedProject);
                     if(saved) {
                          updateStat(`${fileCount} file(s) added/updated & saved.`, 'success');
+                         displayOutput("Project saved successfully.\n");
                     } else {
                          updateStat(`${fileCount} file(s) added/updated, but save failed!`, 'error');
                          displayErrorOutput("Error saving updated project to IndexedDB.\n");
@@ -266,6 +275,7 @@ const TerminalManager = (() => {
                } else {
                     displayOutput("Archive unpacked, but contained no files.\n");
                }
+
           } catch (error) {
                console.error("Error processing ZIP file:", error);
                displayErrorOutput(`Error unpacking archive: ${error.message}\n`);
@@ -335,6 +345,7 @@ const TerminalManager = (() => {
           if (terminalOutputElement) {
                terminalOutputElement.innerHTML = '';
           }
+           displayOutput(getPromptText());
      }
 
     function scrollToBottom() {
