@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const terminalOutput = document.getElementById('terminal-output');
     const terminalInput = document.getElementById('terminal-input');
     const terminalPrompt = document.getElementById('terminal-prompt');
+    const previewTabButton = document.getElementById('preview-tab-button');
+    const appContainer = document.getElementById('app-container'); // Reference for layout class
 
     let editor = null;
     let currentProject = null;
@@ -65,7 +67,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
 
+    function isLikelyMobileDevice() {
+        let isMobile = false;
+        try {
+            if (navigator.maxTouchPoints > 0) {
+                isMobile = true;
+            }
+            if ('ontouchstart' in window) {
+                 isMobile = true;
+            }
+             if (navigator.userAgentData && navigator.userAgentData.mobile) {
+                 isMobile = true;
+             }
+        } catch (e) {
+            console.warn("Could not reliably determine device type.", e);
+            isMobile = false;
+        }
+        return isMobile;
+    }
+
+    function applyLayoutBasedOnDevice() {
+        if (isLikelyMobileDevice()) {
+            appContainer.classList.add('mobile-layout');
+            appContainer.classList.remove('desktop-layout');
+        } else {
+            appContainer.classList.add('desktop-layout');
+            appContainer.classList.remove('mobile-layout');
+        }
+         if (editor) {
+            setTimeout(() => editor.layout(), 50);
+        }
+    }
+
     async function initializeEditorPage() {
+        applyLayoutBasedOnDevice();
+
         const projectId = await getCurrentProjectId();
         if (!projectId) { handleMissingProject("No project selected."); return; }
         currentProject = await getProjectFromStorage(projectId);
@@ -77,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         TerminalManager.initialize(terminalOutput, terminalInput, terminalPrompt);
-        setupMonaco();
+        setupMonaco(); // Monaco setup will call postMonacoSetup
     }
 
     function handleMissingProject(message) {
@@ -102,6 +138,8 @@ document.addEventListener('DOMContentLoaded', () => {
          applySettings();
          setEditorDirty(false);
          setupEditorSpecificEventListeners();
+         const initialTab = document.querySelector('.tab-button.active')?.dataset.tab || 'editor';
+         activateTab(initialTab);
     }
 
      function applySettings() {
@@ -132,22 +170,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileManager = {
         renderList: () => { if (!currentProject) return; fileListUl.innerHTML = ''; currentProject.files.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => { const iconClass = fileManager.getIconClass(file.name); const icon = createDOMElement('i', { className: `file-icon ${iconClass}` }); const nameSpan = createDOMElement('span', { textContent: file.name }); const li = createDOMElement('li', { dataset: { fileId: file.id }, title: file.name, children: [icon, nameSpan] }); if (file.id === currentOpenFileId) li.classList.add('active'); fileListUl.appendChild(li); }); const fileSelected = !!currentOpenFileId; deleteFileButton.disabled = !fileSelected; renameFileButton.disabled = !fileSelected; },
         getIconClass: (filename) => { const lang = getLanguageFromFilename(filename); const iconMap = {html:'fab fa-html5',css:'fab fa-css3-alt',javascript:'fab fa-js-square',python:'fab fa-python',markdown:'fab fa-markdown',json:'fas fa-file-code',java:'fab fa-java',csharp:'fas fa-hashtag',cpp:'fas fa-plus',c:'fas fa-copyright',rust:'fab fa-rust',go:'fab fa-google',php:'fab fa-php',rb:'fas fa-gem',sh:'fas fa-terminal',xml:'fas fa-file-code',yaml:'fas fa-file-alt'}; return iconMap[lang] || 'fas fa-file'; },
-        open: (fileId, force = false) => { if (!currentProject || !editor) return; if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { editor.setValue(`// Error: File not found (ID: ${fileId})`); if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return; } currentOpenFileId = file.id; currentProject.openFileId = file.id; const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`); let model = monaco.editor.getModel(modelUri); if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); } else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); } editor.setModel(model); editor.focus(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); },
+        open: (fileId, force = false) => { if (!currentProject || !editor) return; if (!force && editorDirty && !confirm("Unsaved changes. Switch file anyway?")) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { editor.setValue(`// Error: File not found (ID: ${fileId})`); if (editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), 'plaintext'); currentOpenFileId = null; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); return; } currentOpenFileId = file.id; currentProject.openFileId = file.id; const modelUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${file.id}/${file.name}`); let model = monaco.editor.getModel(modelUri); if (!model) { model = monaco.editor.createModel(file.content || '', file.language, modelUri); } else { if (model.getValue() !== (file.content || '')) model.setValue(file.content || ''); if (model.getLanguageId() !== file.language) monaco.editor.setModelLanguage(model, file.language); } editor.setModel(model); editor.focus(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; fileManager.renderList(); setEditorDirty(false); updateRunButtonState(); activateTab('editor'); },
         handleNew: () => { fileNameInput.value = ''; showModal(modalBackdrop, newFileModal); },
         confirmNew: async () => { const fileName = fileNameInput.value.trim(); if (!fileName || !currentProject) { alert("Invalid file name."); return; } if (currentProject.files.some(f => f.name.toLowerCase() === fileName.toLowerCase())) { alert(`File "${fileName}" already exists.`); fileNameInput.focus(); return; } const fileLang = getLanguageFromFilename(fileName); const newFile = { id: generateUUID(), name: fileName, language: fileLang, content: starterContentByLanguage[fileLang] || '' }; currentProject.files.push(newFile); currentProject.openFileId = newFile.id; const saved = await saveProjectToStorage(currentProject); if(saved) { fileManager.renderList(); fileManager.open(newFile.id, true); setEditorDirty(true); hideModal(modalBackdrop, newFileModal); } },
         handleRename: (fileIdToRename = null) => { const fileId = fileIdToRename || currentOpenFileId; if (!currentProject || !fileId) return; const file = currentProject.files.find(f => f.id === fileId); if (!file) { return; } newFileNameInput.value = file.name; renameFileModal.dataset.fileId = fileId; showModal(modalBackdrop, renameFileModal); },
         confirmRename: async () => { const fileId = renameFileModal.dataset.fileId; const newName = newFileNameInput.value.trim(); if (!fileId || !newName || !currentProject) { alert("Invalid input."); return; } const file = currentProject.files.find(f => f.id === fileId); if (!file) { alert("File not found."); hideModal(modalBackdrop, renameFileModal); return; } if (newName === file.name) { hideModal(modalBackdrop, renameFileModal); return; } if (currentProject.files.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.id !== fileId)) { alert(`Name "${newName}" exists.`); newFileNameInput.focus(); return; } const oldName = file.name; file.name = newName; file.language = getLanguageFromFilename(newName); const saved = await saveProjectToStorage(currentProject); if(saved) { setEditorDirty(true); fileManager.renderList(); if (currentOpenFileId === fileId && editor) { const currentModelInstance = editor.getModel(); const oldUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${oldName}`); if (currentModelInstance && currentModelInstance.uri.toString() === oldUri.toString()) { const newUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileId}/${newName}`); const currentContent = currentModelInstance.getValue(); const currentViewState = editor.saveViewState(); const newModel = monaco.editor.createModel(currentContent, file.language, newUri); editor.setModel(newModel); if (currentViewState) editor.restoreViewState(currentViewState); editor.focus(); currentModelInstance.dispose(); } else { fileManager.open(fileId, true); } } hideModal(modalBackdrop, renameFileModal); } },
-        handleDelete: async () => { if (!currentProject || !currentOpenFileId) return; const fileToDelete = currentProject.files.find(f => f.id === currentOpenFileId); if (!fileToDelete) return; if (confirm(`Delete "${fileToDelete.name}"? Cannot be undone.`)) { const fileUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileToDelete.id}/${fileToDelete.name}`); currentProject.files = currentProject.files.filter(f => f.id !== currentOpenFileId); const nextFileId = currentProject.files[0]?.id || null; currentProject.openFileId = nextFileId; const saved = await saveProjectToStorage(currentProject); if (saved) { setEditorDirty(false); monaco.editor.getModel(fileUri)?.dispose(); if (nextFileId) fileManager.open(nextFileId, true); else { currentOpenFileId = null; if (editor) editor.setModel(null); fileManager.renderList(); updateRunButtonState(); } } } }
+        handleDelete: async () => { if (!currentProject || !currentOpenFileId) return; const fileToDelete = currentProject.files.find(f => f.id === currentOpenFileId); if (!fileToDelete) return; if (confirm(`Delete "${fileToDelete.name}"? Cannot be undone.`)) { const fileUri = monaco.Uri.parse(`ryxide://project/${currentProject.id}/${fileToDelete.id}/${fileToDelete.name}`); currentProject.files = currentProject.files.filter(f => f.id !== currentOpenFileId); const nextFileId = currentProject.files[0]?.id || null; currentProject.openFileId = nextFileId; const saved = await saveProjectToStorage(currentProject); if (saved) { setEditorDirty(false); monaco.editor.getModel(fileUri)?.dispose(); if (nextFileId) fileManager.open(nextFileId, true); else { currentOpenFileId = null; if (editor) editor.setModel(null); fileManager.renderList(); updateRunButtonState(); activateTab('editor'); } } } }
     };
 
-    function handleTabSwitch(event) {
-         const button = event.target.closest('.tab-button'); if (!button) return; const tabName = button.dataset.tab;
-         tabButtons.forEach(btn => btn.classList.toggle('active', btn === button)); tabContents.forEach(content => content.classList.toggle('active', content.id === `${tabName}-tab-content`));
+    function activateTab(tabName) {
+        const buttonToActivate = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+        const contentToActivate = document.getElementById(`${tabName}-tab-content`);
+
+        if (!buttonToActivate || !contentToActivate) {
+            console.warn(`Attempted to activate non-existent tab: ${tabName}`);
+            if (tabName !== 'editor') activateTab('editor');
+            return;
+        }
+
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+        buttonToActivate.classList.add('active');
+        contentToActivate.classList.add('active');
 
          if (tabName === 'editor' && editor) { setTimeout(() => editor.layout(), 0); editor.focus(); }
          else if (tabName === 'output') { outputDisplay.scrollTop = outputDisplay.scrollHeight; }
          else if (tabName === 'ai-chat') { aiChatInput.focus(); aiChatMessages.scrollTop = aiChatMessages.scrollHeight; }
          else if (tabName === 'terminal') { terminalInput.focus(); }
+         else if (tabName === 'preview') { previewFrame.focus(); }
+    }
+
+    function handleTabSwitch(event) {
+         const button = event.target.closest('.tab-button');
+         if (!button) return;
+         const tabName = button.dataset.tab;
+         activateTab(tabName);
     }
 
     const aiChatManager = {
@@ -163,13 +221,26 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const runtimeManager = {
-        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(file.language, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } outputDisplay.textContent = `Direct execution for ${lang} is not supported.\nUse the 'Run Externally' button if available.`; updateStatus(`Run not supported for ${lang}`, 'warning'); },
-        runClientSide: (lang, code) => { updateStatus(`Running ${lang}...`, 'info', 0); switch(lang) { case 'html': runtimeManager.runHtmlPreview(); break; case 'css': runtimeManager.runCssPreview(code); break; case 'javascript': runtimeManager.runJavaScriptCode(code); break; case 'markdown': runtimeManager.runMarkdownPreview(code); break; } },
-        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name===name&&f.language==='css'); if(cssFile) inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name===name&&f.language==='javascript'); if(jsFile) inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); updateStatus('Preview failed', 'error'); } },
-        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS</title><style>${escapeHtml(code)}</style></head><body><h1>H</h1><p>P</p><button class="primary">B</button></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
-        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); outputDisplay.textContent='--- JavaScript Output ---\n'; const fullHtml = `<!DOCTYPE html><html><head><title>JS</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Error: \${m} (\${l}:\${c})\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message); } </script></body></html>`; const listener = (e) => { if (e.source !== previewFrame.contentWindow || e.data?.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputDisplay.textContent='Console cleared.\n'; else { const p = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputDisplay.textContent += p + args.join(' ') + '\n'; } outputDisplay.scrollTop = outputDisplay.scrollHeight; }; window.addEventListener('message', listener); previewFrame.srcdoc = fullHtml; setTimeout(() => { window.removeEventListener('message', listener); if (outputDisplay && !outputDisplay.textContent.includes('--- Script Finished ---') && !outputDisplay.textContent.includes('Error:')) { outputDisplay.textContent += '(Script may have finished silently or errored)\n'; } updateStatus('JS Finished', 'success'); }, 5000); },
-        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); showLoader(loaderOverlay, loaderText, "Executing Python..."); outputDisplay.textContent = '--- Sending Python to Backend ---\n'; try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); outputDisplay.textContent += '\n--- Backend Response Start ---\n'; if (result.stdout) outputDisplay.textContent += result.stdout; if (result.stderr) outputDisplay.textContent += `\n--- STDERR ---\n${result.stderr}`; const exitMessage = result.exit_code === 0 ? `\n--- Python finished (Backend) [Exit Code: 0] ---` : `\n--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---`; outputDisplay.textContent += exitMessage; updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { outputDisplay.textContent += `\nBackend HTTP Error ${response.status}: ${result.error || response.statusText}`; updateStatus('Python Backend Error', 'error'); } } catch (error) { outputDisplay.textContent += `\n--- ERROR ---\nNetwork/Fetch Error: ${error.message}`; updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); outputDisplay.scrollTop = outputDisplay.scrollHeight; } },
-        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>MD</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ outputDisplay.textContent=`MD Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
+        runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(lang, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } outputDisplay.textContent = `Direct execution for ${lang} is not supported.\nUse the 'Run Externally' button if available or the Terminal tab.`; updateStatus(`Run not supported for ${lang}`, 'warning'); },
+        runClientSide: (lang, code) => {
+            updateStatus(`Running ${lang}...`, 'info', 0);
+            const isMobileLayout = appContainer.classList.contains('mobile-layout');
+
+            switch(lang) {
+                 case 'html': runtimeManager.runHtmlPreview(); break;
+                 case 'css': runtimeManager.runCssPreview(code); break;
+                 case 'javascript': runtimeManager.runJavaScriptCode(code); break;
+                 case 'markdown': runtimeManager.runMarkdownPreview(code); break;
+            }
+             if (isMobileLayout && ['html', 'css', 'javascript', 'markdown'].includes(lang)) {
+                 activateTab('preview');
+             }
+         },
+        runHtmlPreview: () => { const htmlFile = currentProject?.files.find(f => f.id === currentOpenFileId && f.language === 'html'); if (!htmlFile) { updateStatus('Preview failed: HTML file not found or open.', 'error'); return; } let htmlContent = editor?.getValue() ?? htmlFile.content ?? ''; let inlineStyles = ''; let inlineScripts = ''; try { const cssLinks = htmlContent.match(/<link.*?href=["'](.*?)["']/gi) || []; const scriptSrcs = htmlContent.match(/<script.*?src=["'](.*?)["']/gi) || []; cssLinks.forEach(tag => { const href = tag.match(/href=["'](.*?)["']/i)?.[1]; const rel = tag.match(/rel=["']stylesheet["']/i); if (href && rel) { const name = href.split('/').pop(); const cssFile = currentProject.files.find(f=>f.name.toLowerCase()===name.toLowerCase()&&f.language==='css'); if(cssFile) { inlineStyles+=`\n/* ${escapeHtml(cssFile.name)} */\n${cssFile.content||''}\n`; console.log(`Inlining CSS: ${cssFile.name}`); } else { console.warn(`CSS file not found for link: ${href}`); } } }); scriptSrcs.forEach(tag => { const src = tag.match(/src=["'](.*?)["']/i)?.[1]; if (src && !src.startsWith('http:') && !src.startsWith('https:') && !src.startsWith('//')) { const name = src.split('/').pop(); const jsFile = currentProject.files.find(f=>f.name.toLowerCase()===name.toLowerCase()&&f.language==='javascript'); if(jsFile) { inlineScripts+=`\n/* ${escapeHtml(jsFile.name)} */\n;(function(){\ntry {\n${jsFile.content||''}\n} catch(e) { console.error('Error in ${escapeHtml(jsFile.name)}:', e); }\n})();\n`; console.log(`Inlining JS: ${jsFile.name}`); } else { console.warn(`JS file not found for src: ${src}`); } } else if (src) { console.log(`Skipping external/absolute script: ${src}`); } }); const styleTag = inlineStyles ? `<style>\n${inlineStyles}\n</style>` : ''; const scriptTag = inlineScripts ? `<script>\n${inlineScripts}\nconsole.log("--- Injected Scripts Finished ---");\n</script>` : ''; if (htmlContent.includes('</head>')) htmlContent = htmlContent.replace('</head>', `${styleTag}\n</head>`); else htmlContent = styleTag + htmlContent; if (htmlContent.includes('</body>')) htmlContent = htmlContent.replace('</body>', `${scriptTag}\n</body>`); else htmlContent += scriptTag; previewFrame.srcdoc = htmlContent; updateStatus('Preview Ready', 'success'); } catch (e) { console.error("HTML Preview Error:", e); previewFrame.srcdoc = `<pre>Preview generation error: ${escapeHtml(e.message)}</pre>`; updateStatus('Preview failed', 'error'); } },
+        runCssPreview: (code) => { const cssHtml = `<!DOCTYPE html><html><head><title>CSS Preview</title><style>${escapeHtml(code)}</style></head><body><h1>Heading 1</h1><p>This is a paragraph with <strong>strong</strong> text and <em>emphasized</em> text.</p><button class="primary">Primary Button</button><button>Default Button</button><div>A div element.</div></body></html>`; previewFrame.srcdoc = cssHtml; updateStatus('Preview Ready', 'success');},
+        runJavaScriptCode: (code) => { updateStatus('Running JS...', 'info', 0); activateTab('output'); outputDisplay.textContent='--- JavaScript Output ---\n'; const fullHtml = `<!DOCTYPE html><html><head><title>JS Runner</title></head><body><script> const console = { log: (...a)=>parent.postMessage({type:'ryx-log',level:'log',args:a.map(x=>String(x))},'*'), error: (...a)=>parent.postMessage({type:'ryx-log',level:'error',args:a.map(x=>String(x))},'*'), warn: (...a)=>parent.postMessage({type:'ryx-log',level:'warn',args:a.map(x=>String(x))},'*'), info: (...a)=>parent.postMessage({type:'ryx-log',level:'info',args:a.map(x=>String(x))},'*'), clear: ()=>parent.postMessage({type:'ryx-log',level:'clear'},'*') }; window.onerror=(m,s,l,c,e)=>{console.error(\`Uncaught Error: \${m} at \${s} \${l}:\${c}\`);return true;}; try { ${code}\n console.log('--- Script Finished ---'); } catch (e) { console.error('Runtime Error:', e.name, e.message, e.stack ? '\\nStack: '+e.stack : ''); } </script></body></html>`; const messageListener = (e) => { if (e.source !== previewFrame.contentWindow || !e.data || e.data.type !== 'ryx-log') return; const { level, args } = e.data; if(level==='clear') outputDisplay.textContent='Console cleared.\n'; else { const prefix = level==='error'?'ERROR: ':level==='warn'?'WARN: ':level==='info'?'INFO: ':''; outputDisplay.textContent += prefix + args.join(' ') + '\n'; } outputDisplay.scrollTop = outputDisplay.scrollHeight; }; window.addEventListener('message', messageListener); previewFrame.srcdoc = fullHtml; let jsFinishTimeout = setTimeout(() => { window.removeEventListener('message', messageListener); if (outputDisplay && !outputDisplay.textContent.includes('--- Script Finished ---') && !outputDisplay.textContent.includes('Error:')) { outputDisplay.textContent += '(Script execution timeout or finished silently)\n'; } updateStatus('JS Finished/Timeout', 'success'); }, 5000); previewFrame.contentWindow.addEventListener('message', (e) => { if (e.data?.type === 'ryx-log' && e.data?.args?.includes('--- Script Finished ---')) { clearTimeout(jsFinishTimeout); window.removeEventListener('message', messageListener); updateStatus('JS Finished', 'success'); } }, { once: true }); },
+        runPythonCode: async (code) => { if (!PYTHON_BACKEND_URL) { alert("Python backend URL not configured."); updateStatus('Py Backend Error', 'error'); return; } updateStatus('Running Python (Backend)...', 'info', 0); activateTab('output'); showLoader(loaderOverlay, loaderText, "Executing Python..."); outputDisplay.textContent = '--- Sending Python to Backend ---\n'; try { const response = await fetch(PYTHON_BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ code: code }) }); const result = await response.json(); outputDisplay.textContent += '\n--- Backend Response Start ---\n'; if (result.stdout) outputDisplay.textContent += result.stdout; if (result.stderr) outputDisplay.textContent += `\n--- STDERR ---\n${result.stderr}`; const exitMessage = result.exit_code === 0 ? `\n--- Python finished (Backend) [Exit Code: 0] ---` : `\n--- Python failed (Backend) [Exit Code: ${result.exit_code}] ---`; outputDisplay.textContent += exitMessage; updateStatus(result.exit_code === 0 ? 'Python Finished' : 'Python Error', result.exit_code === 0 ? 'success' : 'error'); if (!response.ok) { outputDisplay.textContent += `\nBackend HTTP Error ${response.status}: ${result.error || response.statusText}`; updateStatus('Python Backend Error', 'error'); } } catch (error) { outputDisplay.textContent += `\n--- ERROR ---\nNetwork/Fetch Error: ${error.message}`; updateStatus('Python Network Error', 'error', 5000); } finally { hideLoader(loaderOverlay); outputDisplay.scrollTop = outputDisplay.scrollHeight; } },
+        runMarkdownPreview: (code) => { if(typeof marked==='undefined') { updateStatus('MD Preview Fail', 'error'); previewFrame.srcdoc = '<p>Markdown library not loaded.</p>'; return; } try{ const html = marked.parse(code, { breaks: true, gfm: true, mangle: false, headerIds: false }); const fullHtml = `<!DOCTYPE html><html><head><title>Markdown Preview</title><style>body{font-family:sans-serif;padding:1.5em;line-height:1.6;color:#333;}pre{background:#f0f0f0;padding:1em;border-radius:4px;overflow-x:auto;color:#333;border:1px solid #ddd;}code:not(pre code){background:rgba(0,0,0,0.05);padding:2px 4px;border-radius:3px;font-size:0.9em;}blockquote{border-left:4px solid #ccc;padding-left:1em;margin-left:0;color:#666;}table{border-collapse:collapse;margin:1em 0;}th,td{border:1px solid #ccc;padding:0.5em;}img{max-width:100%;}</style></head><body>${html}</body></html>`; previewFrame.srcdoc = fullHtml; updateStatus('Preview Ready', 'success');} catch(e){ previewFrame.srcdoc = `<pre>Markdown Error: ${escapeHtml(e.message)}</pre>`; outputDisplay.textContent=`MD Preview Error: ${e.message}`; updateStatus('MD Preview Fail', 'error');}},
     };
 
     const editorActions = {
@@ -201,7 +272,11 @@ document.addEventListener('DOMContentLoaded', () => {
         aiApplyConfirmButton.addEventListener('click', aiChatManager.confirmApplyCode);
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
-        window.addEventListener('resize', () => { if (editor) editor.layout(); });
+        window.addEventListener('resize', () => {
+            if (editor) {
+                editor.layout();
+            }
+        });
     }
 
     function setupEditorSpecificEventListeners() {
@@ -220,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateCredits() {
         const features = new Set(['Monaco', 'Gemini', 'Render']);
         if (typeof marked !== 'undefined') features.add('Marked');
-        if (typeof JSZip !== 'undefined') features.add('JSZip');
+        if (typeof TerminalManager !== 'undefined') features.add('HTTP Term');
         creditsElement.textContent = `Powered by: ${Array.from(features).join(', ')}.`;
     }
 
@@ -231,10 +306,10 @@ document.addEventListener('DOMContentLoaded', () => {
          const runnableBackendPython = lang === 'python';
          const runnableExternalKey = lang === 'java' ? 'java' : lang === 'go' ? 'go' : lang === 'php' ? 'php' : lang === 'rust' ? 'rust' : lang === 'c' ? 'c' : lang === 'cpp' ? 'cpp' : lang === 'csharp' ? 'csharp' : lang === 'ruby' ? 'ruby' : null;
          const externalLink = runnableExternalKey ? externalSandboxLinks[runnableExternalKey] : null;
-         let canRun = runnableInternalClient || runnableBackendPython;
-         runButton.disabled = !canRun;
+         let canRunInternal = runnableInternalClient || runnableBackendPython;
+         runButton.disabled = !canRunInternal;
          runButton.style.display = 'inline-flex';
-         runButton.title = canRun ? `Run/Preview ${lang}` : `Run not supported for ${lang}`;
+         runButton.title = canRunInternal ? `Run/Preview ${lang}` : `Run not supported for ${lang}. Use Terminal or External Run.`;
          runExternalButton.style.display = externalLink ? 'inline-flex' : 'none';
          if (externalLink) { runExternalButton.href = externalLink; runExternalButton.title = `Run ${lang} in External Sandbox`; }
     }
