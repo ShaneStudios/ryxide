@@ -62,7 +62,7 @@ const TerminalManager = (() => {
              event.preventDefault();
              clearOutput();
         } else if (event.key === 'c' && event.ctrlKey) {
-             console.log("Terminal Ctrl+C pressed (no backend interrupt via HTTP)");
+             console.log("Terminal Ctrl+C pressed (cannot interrupt backend via HTTP)");
         }
     }
 
@@ -115,47 +115,45 @@ const TerminalManager = (() => {
             });
 
             const responseText = await response.text();
-            let result;
+            let result = {};
 
-            try {
-                result = JSON.parse(responseText);
-            } catch(jsonError) {
-                console.error("Failed to parse JSON response:", responseText);
-                 displayErrorOutput(`Error: Received non-JSON response from backend (Status: ${response.status})\n`);
-                 displayErrorOutput(responseText + "\n");
-                 result = { error: "Invalid JSON response", stdout: '', stderr: '' };
-                  if (!response.ok) {
-                  } else {
-                       displayErrorOutput("Backend returned OK status but invalid JSON.\n");
-                  }
-            }
-
-
-            if (response.ok) {
-                if (result.stdout) {
-                    displayOutput(result.stdout);
-                }
-                if (result.stderr) {
-                    displayErrorOutput(result.stderr);
-                }
-                 if (result.stdout && !result.stdout.endsWith('\n') && !result.stderr) {
-                      displayOutput('\n');
-                 } else if (result.stderr && !result.stderr.endsWith('\n')) {
-                      displayOutput('\n');
+            if (!response.ok) {
+                 console.error(`Backend Error (Status: ${response.status}):`, responseText);
+                 let errorMsg = `Error: ${response.status} ${response.statusText}\n`;
+                 try {
+                      result = JSON.parse(responseText);
+                      if(result.error) errorMsg += `Backend: ${result.error}\n`;
+                      if(result.stderr) displayErrorOutput(`Stderr: ${result.stderr}\n`);
+                      if(result.stdout) displayOutput(`Stdout: ${result.stdout}\n`);
+                 } catch(e) {
+                      errorMsg += `Backend Response: ${responseText}\n`;
                  }
+                 displayErrorOutput(errorMsg);
 
             } else {
-                let errorMessage = `Error: ${response.status} ${response.statusText}`;
-                if (result && result.error) {
-                    errorMessage += `\nBackend: ${result.error}`;
-                }
-                 if (result && result.stdout) {
-                      displayOutput("Partial Output (stdout):\n" + result.stdout);
+                 try {
+                      result = JSON.parse(responseText);
+                      if (result.stdout) {
+                           displayOutput(result.stdout);
+                           if (!result.stdout.endsWith('\n')) {
+                                displayOutput('\n');
+                           }
+                      }
+                      if (result.stderr) {
+                           displayErrorOutput(result.stderr);
+                            if (!result.stderr.endsWith('\n')) {
+                                displayOutput('\n');
+                           }
+                      }
+                      if (!result.stdout && !result.stderr) {
+                           displayOutput('\n');
+                      }
+
+                 } catch (jsonError) {
+                      console.error("Failed to parse JSON response despite OK status:", responseText);
+                      displayErrorOutput(`Error: Received non-JSON response from backend (Status: ${response.status})\n`);
+                      displayErrorOutput(responseText + "\n");
                  }
-                 if (result && result.stderr) {
-                      displayErrorOutput("Partial Output (stderr):\n" + result.stderr);
-                 }
-                displayErrorOutput(errorMessage + "\n");
             }
 
         } catch (error) {
@@ -190,29 +188,25 @@ const TerminalManager = (() => {
      }
 
     function getPromptText() {
-         return terminalPromptElement ? terminalPromptElement.textContent : '> ';
+         return isExecuting ? '$ ' : '> ';
     }
 
     function setPromptBusy(busy) {
          if (!terminalPromptElement) return;
-         if (busy) {
-              terminalPromptElement.style.color = 'var(--text-warning)';
-              terminalPromptElement.textContent = '$ ';
-         } else {
-              terminalPromptElement.style.color = 'var(--text-success)';
-              terminalPromptElement.textContent = '> ';
-         }
+         terminalPromptElement.textContent = getPromptText();
+         terminalPromptElement.style.color = busy ? 'var(--text-warning)' : 'var(--text-success)';
     }
 
     function displayCommand(command) {
         if (!terminalOutputElement) return;
-        const promptText = getPromptText();
+        const promptText = '> ';
         displayOutput(`${promptText}${escapeHtml(command)}\n`);
     }
 
     function displayOutput(text) {
         if (!terminalOutputElement || !text) return;
         terminalOutputElement.appendChild(document.createTextNode(String(text)));
+        scrollToBottom();
     }
 
     function displayErrorOutput(text) {
@@ -221,6 +215,7 @@ const TerminalManager = (() => {
         errorSpan.style.color = 'var(--text-danger)';
         errorSpan.appendChild(document.createTextNode(String(text)));
         terminalOutputElement.appendChild(errorSpan);
+        scrollToBottom();
     }
 
      function clearOutput() {
@@ -240,7 +235,7 @@ const TerminalManager = (() => {
      function ensureInputFocus() {
          setTimeout(() => {
               if (terminalInputElement && !terminalInputElement.disabled) {
-                  terminalInputElement.focus();
+                   terminalInputElement.focus();
               }
          }, 0);
      }
@@ -249,15 +244,5 @@ const TerminalManager = (() => {
         initialize: initialize
     };
 })();
-
-function escapeHtml(unsafe) {
-  if (typeof unsafe !== 'string') return '';
-  return unsafe
-      .replace(/&/g, "&")
-      .replace(/</g, "<")
-      .replace(/>/g, ">")
-      .replace(/"/g, """)
-      .replace(/'/g, "'");
-}
 
 console.log("terminal.js parsed and TerminalManager should be defined now.");
