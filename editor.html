@@ -35,30 +35,35 @@
                      <div id="file-actions"> <button id="rename-file-button" title="Rename Selected File" disabled><i class="fas fa-pencil-alt"></i></button> <button id="new-file-button" title="New File"><i class="fas fa-plus"></i></button> <button id="delete-file-button" title="Delete Selected File" disabled><i class="fas fa-trash"></i></button> </div>
                  </aside>
                  <section id="editor-tabs-area">
-                      <div class="tab-bar">
-                          <button class="tab-button active" data-tab="editor"><i class="fas fa-code"></i> Editor</button>
-                          <button class="tab-button" data-tab="terminal"><i class="fas fa-terminal"></i> Terminal</button>
-                          <button class="tab-button" data-tab="output"><i class="fas fa-align-left"></i> Output</button>
-                          <button class="tab-button" data-tab="ai-chat"><i class="fas fa-robot"></i> AI Chat</button>
-                      </div>
-                      <div class="tab-content active" id="editor-tab-content"> <div id="editor-container"></div> </div>
-                      <div class="tab-content" id="terminal-tab-content">
-                           <div id="terminal-interface">
-                               <div id="terminal-output"></div>
-                               <div class="terminal-input-line">
-                                   <span id="terminal-prompt">></span>
-                                   <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
+                      <div id="editor-tabs-primary">
+                          <div class="tab-bar">
+                              <button class="tab-button active" data-tab="editor"><i class="fas fa-code"></i> Editor</button>
+                              <button class="tab-button" data-tab="preview" id="preview-tab-button"><i class="fas fa-eye"></i> Preview</button>
+                              <button class="tab-button" data-tab="terminal"><i class="fas fa-terminal"></i> Terminal</button>
+                              <button class="tab-button" data-tab="output"><i class="fas fa-align-left"></i> Output</button>
+                              <button class="tab-button" data-tab="ai-chat"><i class="fas fa-robot"></i> AI Chat</button>
+                          </div>
+                          <div class="tab-content active" id="editor-tab-content"> <div id="editor-container"></div> </div>
+                          <div class="tab-content" id="terminal-tab-content">
+                               <div id="terminal-interface">
+                                   <div id="terminal-output"></div>
+                                   <div class="terminal-input-line">
+                                       <span id="terminal-prompt">></span>
+                                       <input type="text" id="terminal-input" spellcheck="false" autocomplete="off">
+                                   </div>
                                </div>
+                          </div>
+                          <div class="tab-content" id="output-tab-content">
+                              <pre id="output-display"></pre>
+                          </div>
+                          <div class="tab-content" id="ai-chat-tab-content"> <div id="ai-chat-interface"> <div class="ai-chat-controls"> <label for="ai-chat-selector" class="sr-only">Chat History:</label> <select id="ai-chat-selector" title="Select Chat History"></select> <button id="ai-new-chat-button" title="New Chat"><i class="fas fa-plus"></i></button> <button id="ai-delete-chat-button" title="Delete Current Chat"><i class="fas fa-trash"></i></button> <label for="ai-mode-selector" class="sr-only">AI Mode:</label> <select id="ai-mode-selector" title="AI Interaction Mode"> <option value="generate">Generate Only</option> <option value="modify">Modify Files (Preview)</option> </select> </div> <div id="ai-chat-messages"></div> <div id="ai-chat-input-area"> <textarea id="ai-chat-input" placeholder="Ask AI... (Shift+Enter for newline)" rows="3"></textarea> <button id="ai-send-button" title="Send Message (Enter)"><i class="fas fa-paper-plane"></i></button> </div> </div> </div>
+                      </div>
+                      <div class="tab-content" id="preview-tab-content">
+                           <div id="preview-pane">
+                                <iframe id="preview-frame" title="Preview Pane" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
                            </div>
                       </div>
-                      <div class="tab-content" id="output-tab-content">
-                          <pre id="output-display"></pre>
-                      </div>
-                      <div class="tab-content" id="ai-chat-tab-content"> <div id="ai-chat-interface"> <div class="ai-chat-controls"> <label for="ai-chat-selector" class="sr-only">Chat History:</label> <select id="ai-chat-selector" title="Select Chat History"></select> <button id="ai-new-chat-button" title="New Chat"><i class="fas fa-plus"></i></button> <button id="ai-delete-chat-button" title="Delete Current Chat"><i class="fas fa-trash"></i></button> <label for="ai-mode-selector" class="sr-only">AI Mode:</label> <select id="ai-mode-selector" title="AI Interaction Mode"> <option value="generate">Generate Only</option> <option value="modify">Modify Files (Preview)</option> </select> </div> <div id="ai-chat-messages"></div> <div id="ai-chat-input-area"> <textarea id="ai-chat-input" placeholder="Ask AI... (Shift+Enter for newline)" rows="3"></textarea> <button id="ai-send-button" title="Send Message (Enter)"><i class="fas fa-paper-plane"></i></button> </div> </div> </div>
                  </section>
-                 <aside id="side-pane">
-                     <div id="preview-pane"> <iframe id="preview-frame" title="Preview Pane" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe> </div>
-                 </aside>
             </main>
              <footer>
                  <p>RyxIDE by <a href="https://github.com/ShaneStudios/" target="_blank" rel="noopener noreferrer">Shane Studios</a>. <span id="status-indicator"></span> | <a href="changelog.html">Changelog</a> | <a href="credits.html">Credits</a> </p>
