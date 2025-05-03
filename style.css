@@ -23,6 +23,9 @@
     --bg-scrollbar: #555;
     --bg-scrollbar-thumb: #888;
     --bg-tab-active: var(--bg-primary);
+    --preview-pane-width-desktop: 40%;
+    --preview-pane-min-width-desktop: 250px;
+    --preview-pane-max-width-desktop: 600px;
     --text-primary: #cccccc;
     --text-secondary: #aaaaaa;
     --text-placeholder: #777;
@@ -123,8 +126,137 @@ footer p { margin: 0; }
 .warning { background-color: rgba(243, 156, 18, 0.1); color: #f39c12; padding: var(--spacing-s); border-radius: var(--radius-small); font-size: 0.9em; border: 1px solid #e67e22; margin-bottom: var(--spacing-m);}
 .warning strong { color: #e67e22; }
 #editor-view { display: flex; flex-direction: column; height: 100%; }
-#editor-main-content { display: flex; flex-grow: 1; overflow: hidden; }
-#file-pane { width: 250px; background-color: var(--bg-secondary); padding: var(--spacing-s); display: flex; flex-direction: column; flex-shrink: 0; border-right: 1px solid var(--border-primary); }
+
+#editor-main-content {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden;
+    flex-direction: row;
+}
+
+#file-pane {
+    width: 250px;
+    height: 100%;
+    background-color: var(--bg-secondary);
+    padding: var(--spacing-s);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-primary);
+    border-bottom: none;
+}
+
+#editor-tabs-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+#preview-pane {
+    height: 100%;
+    width: 100%;
+    background-color: #ffffff;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+#preview-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    flex-grow: 1;
+}
+
+#preview-tab-content {
+     display: flex;
+     width: var(--preview-pane-width-desktop);
+     min-width: var(--preview-pane-min-width-desktop);
+     max-width: var(--preview-pane-max-width-desktop);
+     height: 100%;
+     border-left: 1px solid var(--border-primary);
+     resize: horizontal;
+     overflow: auto;
+     background-color: var(--bg-primary);
+     flex-shrink: 0;
+     flex-direction: column;
+     padding: 0;
+}
+
+#preview-tab-button {
+    display: none;
+}
+
+.goto-line-container {
+    display: flex;
+    align-items: center;
+    margin-left: var(--spacing-xs);
+}
+
+.mobile-layout #editor-main-content {
+    flex-direction: column;
+}
+
+.mobile-layout #file-pane {
+    width: 100%;
+    height: 150px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.mobile-layout #editor-tabs-area {
+    flex-grow: 1;
+    border-left: none;
+    resize: none;
+    position: static;
+}
+
+.mobile-layout #preview-tab-content {
+    display: none;
+    width: 100%;
+    min-width: auto;
+    max-width: none;
+    height: 100%;
+    border-left: none;
+    resize: none;
+    flex-shrink: 1;
+    position: static;
+    overflow: hidden;
+}
+.mobile-layout #preview-tab-content.active {
+    display: flex;
+}
+
+.mobile-layout #preview-tab-button {
+    display: flex;
+}
+
+.mobile-layout .goto-line-container {
+    display: none;
+}
+.mobile-layout .header-controls { gap: var(--spacing-xs); }
+.mobile-layout .header-button { padding: 6px 8px; }
+.mobile-layout .tab-bar { justify-content: flex-start; overflow-x: auto; }
+
+.desktop-layout #editor-main-content { flex-direction: row; }
+.desktop-layout #file-pane { width: 250px; height: 100%; border-right: 1px solid var(--border-primary); border-bottom: none; }
+.desktop-layout #editor-tabs-area { flex-grow: 1; position: relative; } /* Keep relative for potential absolute children */
+.desktop-layout #preview-tab-content {
+    display: flex; /* Ensure always visible */
+    width: var(--preview-pane-width-desktop);
+    min-width: var(--preview-pane-min-width-desktop);
+    max-width: var(--preview-pane-max-width-desktop);
+    height: 100%;
+    border-left: 1px solid var(--border-primary);
+    resize: horizontal;
+    overflow: auto;
+    flex-shrink: 0;
+}
+.desktop-layout #preview-tab-button { display: none; }
+.desktop-layout .goto-line-container { display: flex; }
+
 #file-pane h4 { padding-left: var(--spacing-xs); margin-bottom: var(--spacing-m); }
 #file-list { list-style: none; padding: 0; margin: 0; flex-grow: 1; overflow-y: auto; }
 #file-list li { padding: 7px 10px; cursor: pointer; border-radius: var(--radius-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 10px; font-size: 0.95em; transition: background-color 0.1s ease; border: 1px solid transparent; }
@@ -135,18 +267,18 @@ footer p { margin: 0; }
 #file-actions { margin-top: var(--spacing-s); padding-top: var(--spacing-s); border-top: 1px solid var(--border-primary); text-align: right; display: flex; gap: var(--spacing-xs); justify-content: flex-end;}
 #file-actions button { font-size: 0.9em; padding: 4px 8px; background-color: transparent; border: 1px solid transparent; color: var(--text-secondary); }
 #file-actions button:hover { background-color: var(--bg-button); border-color: var(--border-input); color: var(--text-icon-hover); }
-#editor-tabs-area { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+
 .tab-bar { display: flex; background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); flex-shrink: 0; }
-.tab-button { padding: 9px 18px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-secondary); cursor: pointer; font-size: 0.95em; transition: color 0.2s, border-color 0.2s, background-color 0.2s; display: flex; align-items: center; gap: 6px; }
+.tab-button { padding: 9px 18px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-secondary); cursor: pointer; font-size: 0.95em; transition: color 0.2s, border-color 0.2s, background-color 0.2s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .tab-button:hover { color: var(--text-primary); background-color: var(--bg-tertiary); }
 .tab-button.active { color: var(--text-primary); border-bottom-color: var(--border-active-tab); background-color: var(--bg-tab-active); }
+
 .tab-content { display: none; flex-grow: 1; overflow: hidden; background-color: var(--bg-primary); }
 .tab-content.active { display: flex; flex-direction: column; }
+
 #editor-tab-content { background-color: transparent; }
 #editor-container { height: 100%; width: 100%; }
-#side-pane { width: 40%; max-width: 500px; min-width: 250px; height: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--border-primary); flex-shrink: 0; resize: horizontal; overflow: auto; }
-#preview-pane { height: 50%; background-color: #ffffff; overflow: auto; border-bottom: 1px solid var(--border-primary); flex-shrink: 0; }
-#preview-frame { width: 100%; height: 100%; border: none; }
+
 #output-tab-content { flex-grow: 1; overflow: hidden; background-color: var(--bg-primary); padding: 0; display: flex; flex-direction: column; }
 #output-display { flex-grow: 1; background-color: var(--bg-code-block); color: var(--text-primary); padding: var(--spacing-s); font-family: var(--font-mono); white-space: pre-wrap; word-wrap: break-word; overflow-y: auto; font-size: 0.9em; border: 1px solid var(--border-primary); margin: var(--spacing-s); border-radius: var(--radius-small); }
 #ai-chat-tab-content { padding: 0; }
@@ -196,7 +328,7 @@ footer p { margin: 0; }
 .file-icon.c { color: #a8b9cc; } .file-icon.rust { color: #dea584; } .file-icon.go { color: #00add8; }
 .file-icon.php { color: #777bb4; } .file-icon.rb { color: #CC342D; } .file-icon.sh { color: #4ec9a0; }
 .file-icon.yaml { color: #cb1717; } .file-icon.xml { color: #ff6600; } .file-icon.default { color: #aaa; }
-.goto-line-container { display: flex; align-items: center; margin-left: var(--spacing-xs); }
+
 .goto-line-container input[type="number"] { width: 60px; padding: 5px; font-size: 0.9em; text-align: center; border-radius: var(--radius-small) 0 0 var(--radius-small); -moz-appearance: textfield; }
 .goto-line-container input[type="number"]::-webkit-outer-spin-button,
 .goto-line-container input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -239,7 +371,7 @@ footer a { margin: 0 var(--spacing-xs); }
     font-size: 0.9em;
     line-height: 1.4;
     color: var(--text-primary);
-    background-color: var(--bg-code-block); /* Use code block bg */
+    background-color: var(--bg-code-block);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -257,19 +389,19 @@ footer a { margin: 0 var(--spacing-xs); }
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;
-    padding-bottom: var(--spacing-s); /* Space before input line */
+    padding-bottom: var(--spacing-s);
 }
 
 .terminal-input-line {
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    background-color: var(--bg-code-block); /* Ensure same background */
+    background-color: var(--bg-code-block);
 }
 
 #terminal-prompt {
     padding-right: var(--spacing-xs);
-    color: var(--text-success); /* e.g., Green prompt */
+    color: var(--text-success);
     white-space: nowrap;
 }
 
@@ -280,8 +412,8 @@ footer a { margin: 0 var(--spacing-xs); }
     color: inherit;
     font-family: inherit;
     font-size: inherit;
-    padding: 2px 0; /* Minimal padding */
-    width: auto; /* Override default width */
+    padding: 2px 0;
+    width: auto;
     box-shadow: none;
     border-radius: 0;
 }
@@ -292,18 +424,4 @@ footer a { margin: 0 var(--spacing-xs); }
     border-color: transparent;
 }
 
-
-@media (max-width: 900px) {
-    #file-pane { width: 200px; }
-    #side-pane { width: 35%; min-width: 250px;}
-    .header-controls { gap: var(--spacing-xs); }
-    .header-button { padding: 6px 8px; }
-}
-@media (max-width: 768px) {
-    #editor-main-content { flex-direction: column; }
-    #file-pane { width: 100%; height: 150px; border-right: none; border-bottom: 1px solid var(--border-primary); flex-shrink: 0; }
-    #editor-tabs-area { flex-grow: 1; }
-    #side-pane { display: none; }
-    .header-controls .goto-line-container { display: none; }
-}
 @keyframes terminal-blink { 0%, 100% { background-color: var(--cursor-background); opacity: 1; } 50% { background-color: transparent; opacity: 0; } }
