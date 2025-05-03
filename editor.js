@@ -53,7 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const terminalInput = document.getElementById('terminal-input');
     const terminalPrompt = document.getElementById('terminal-prompt');
     const previewTabButton = document.getElementById('preview-tab-button');
-    const appContainer = document.getElementById('app-container'); // Reference for layout class
 
     let editor = null;
     let currentProject = null;
@@ -66,41 +65,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoSaveTimeout = null;
 
     const PYTHON_BACKEND_URL = 'https://ryxide-python-executor.onrender.com/run';
-
-    function isLikelyMobileDevice() {
-        let isMobile = false;
-        try {
-            if (navigator.maxTouchPoints > 0) {
-                isMobile = true;
-            }
-            if ('ontouchstart' in window) {
-                 isMobile = true;
-            }
-             if (navigator.userAgentData && navigator.userAgentData.mobile) {
-                 isMobile = true;
-             }
-        } catch (e) {
-            console.warn("Could not reliably determine device type.", e);
-            isMobile = false;
-        }
-        return isMobile;
-    }
-
-    function applyLayoutBasedOnDevice() {
-        if (isLikelyMobileDevice()) {
-            appContainer.classList.add('mobile-layout');
-            appContainer.classList.remove('desktop-layout');
-        } else {
-            appContainer.classList.add('desktop-layout');
-            appContainer.classList.remove('mobile-layout');
-        }
-         if (editor) {
-            setTimeout(() => editor.layout(), 50);
-        }
-    }
+    const MOBILE_BREAKPOINT = 768;
 
     async function initializeEditorPage() {
-        applyLayoutBasedOnDevice();
 
         const projectId = await getCurrentProjectId();
         if (!projectId) { handleMissingProject("No project selected."); return; }
@@ -113,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCredits();
         setupBaseEventListeners();
         TerminalManager.initialize(terminalOutput, terminalInput, terminalPrompt);
-        setupMonaco(); // Monaco setup will call postMonacoSetup
+        setupMonaco();
     }
 
     function handleMissingProject(message) {
@@ -224,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         runCode: async () => { if (!editor || !currentProject || !currentOpenFileId) return; const file = currentProject.files.find(f => f.id === currentOpenFileId); if (!file) return; const code = editor.getValue(); previewFrame.srcdoc = ''; outputDisplay.textContent = ''; const lang = file.language; if (['html', 'css', 'javascript', 'markdown'].includes(lang)) { runtimeManager.runClientSide(lang, code); return; } if (lang === 'python') { await runtimeManager.runPythonCode(code); return; } outputDisplay.textContent = `Direct execution for ${lang} is not supported.\nUse the 'Run Externally' button if available or the Terminal tab.`; updateStatus(`Run not supported for ${lang}`, 'warning'); },
         runClientSide: (lang, code) => {
             updateStatus(`Running ${lang}...`, 'info', 0);
-            const isMobileLayout = appContainer.classList.contains('mobile-layout');
+            const isMobileWidth = window.innerWidth <= MOBILE_BREAKPOINT;
 
             switch(lang) {
                  case 'html': runtimeManager.runHtmlPreview(); break;
@@ -232,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  case 'javascript': runtimeManager.runJavaScriptCode(code); break;
                  case 'markdown': runtimeManager.runMarkdownPreview(code); break;
             }
-             if (isMobileLayout && ['html', 'css', 'javascript', 'markdown'].includes(lang)) {
+             if (isMobileWidth && ['html', 'css', 'javascript', 'markdown'].includes(lang)) {
                  activateTab('preview');
              }
          },
@@ -273,9 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
         shortcutsCloseButton?.addEventListener('click', () => hideModal(modalBackdrop, shortcutsModal));
         window.addEventListener('beforeunload', (e) => { if (editorDirty) { e.preventDefault(); e.returnValue = 'Unsaved changes will be lost.'; } });
         window.addEventListener('resize', () => {
-            if (editor) {
-                editor.layout();
-            }
+            if (editor) { editor.layout(); }
         });
     }
 
