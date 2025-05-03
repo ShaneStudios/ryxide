@@ -1,5 +1,6 @@
 const TerminalManager = (() => {
-    const NODE_BACKEND_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
+    const NODE_EXEC_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
+    const PYTHON_FETCH_URL = 'https://ryxide-backend-terminal-fetch.onrender.com/fetch-and-zip';
 
     let terminalOutputElement = null;
     let terminalInputElement = null;
@@ -18,7 +19,14 @@ const TerminalManager = (() => {
             return;
         }
 
-        console.log("Terminal Initialized. Node Backend Target:", NODE_BACKEND_URL);
+        console.log("Terminal Initialized.");
+        console.log("Node Executor Target:", NODE_EXEC_URL);
+        console.log("Python Fetcher Target:", PYTHON_FETCH_URL);
+
+         if (NODE_EXEC_URL.includes('YOUR_') || PYTHON_FETCH_URL.includes('YOUR_')) {
+             console.error("FATAL: Backend URLs are not configured in terminal.js!");
+             displayErrorOutput("FATAL ERROR: Terminal backend URLs are not configured.\n");
+         }
 
         terminalInputElement.addEventListener('keydown', handleKeyDown);
         terminalOutputElement.addEventListener('click', () => {
@@ -27,24 +35,19 @@ const TerminalManager = (() => {
             }
         });
 
-        displayOutput("Welcome to RyxTerminal (Experimental Multi-Backend Mode)\n");
-        displayOutput("Type 'help' for commands. 'git clone'/'wget' proxied.\n");
-        displayOutput("Note: Still mostly stateless via HTTP.\n");
+        displayOutput("Welcome to RyxTerminal (Dual Backend Mode)\n");
+        displayOutput("Type 'help' for commands. Downloads (`git clone`, `wget`) handled by Python backend.\n");
         ensureInputFocus();
     }
 
     function handleKeyDown(event) {
-        if (isExecuting) {
-            event.preventDefault();
-            return;
-        }
+        if (isExecuting) { event.preventDefault(); return; }
 
         if (event.key === 'Enter') {
             event.preventDefault();
             const command = terminalInputElement.value.trim();
             terminalInputElement.value = '';
             historyIndex = -1;
-
             if (command) {
                 displayCommand(command);
                 addToHistory(command);
@@ -53,135 +56,154 @@ const TerminalManager = (() => {
                 displayOutput(getPromptText() + "\n");
                 scrollToBottom();
             }
-        } else if (event.key === 'ArrowUp') {
-             event.preventDefault();
-             navigateHistory(-1);
-        } else if (event.key === 'ArrowDown') {
-             event.preventDefault();
-             navigateHistory(1);
-        } else if (event.key === 'l' && event.ctrlKey) {
-             event.preventDefault();
-             clearOutput();
-        } else if (event.key === 'c' && event.ctrlKey) {
-             console.log("Terminal Ctrl+C pressed (cannot interrupt backend via HTTP)");
-        }
+        } else if (event.key === 'ArrowUp') { event.preventDefault(); navigateHistory(-1); }
+        else if (event.key === 'ArrowDown') { event.preventDefault(); navigateHistory(1); }
+        else if (event.key === 'l' && event.ctrlKey) { event.preventDefault(); clearOutput(); displayOutput(getPromptText()); }
+        else if (event.key === 'c' && event.ctrlKey) { console.log("Terminal Ctrl+C pressed (no effect on backend)"); }
     }
 
      function navigateHistory(direction) {
          if (commandHistory.length === 0) return;
          const newIndex = historyIndex + direction;
-
          if (newIndex >= -1 && newIndex < commandHistory.length) {
               historyIndex = newIndex;
-              if (historyIndex === -1) {
-                   terminalInputElement.value = '';
-              } else {
-                   terminalInputElement.value = commandHistory[historyIndex];
-              }
-               terminalInputElement.selectionStart = terminalInputElement.selectionEnd = terminalInputElement.value.length;
+              terminalInputElement.value = (historyIndex === -1) ? '' : commandHistory[historyIndex];
+              terminalInputElement.selectionStart = terminalInputElement.selectionEnd = terminalInputElement.value.length;
          }
      }
 
      function addToHistory(command) {
-          if (!command || (commandHistory.length > 0 && commandHistory[commandHistory.length - 1] === command)) {
-                return;
-          }
+          if (!command || (commandHistory.length > 0 && commandHistory[commandHistory.length - 1] === command)) return;
           commandHistory.push(command);
-          if (commandHistory.length > 50) {
-               commandHistory.shift();
-          }
+          if (commandHistory.length > 50) commandHistory.shift();
      }
 
-    function logBackendMessages(responseHeaders) {
-        console.groupCollapsed("[Backend Logs]");
+    function logBackendMessages(responseHeaders, backendType = "Node") {
+        console.groupCollapsed(`[${backendType} Backend Logs]`);
         let foundLogs = false;
         responseHeaders.forEach((value, name) => {
-            if (name.toLowerCase().startsWith('x-log-proxy-') || name.toLowerCase().startsWith('x-log-python-')) {
-                const prefix = name.toLowerCase().startsWith('x-log-python-') ? "🐍 Python:" : "⦿ Node:";
+            const lowerName = name.toLowerCase();
+            if (lowerName.startsWith('x-log-proxy-') || lowerName.startsWith('x-log-python-')) {
+                const prefix = lowerName.startsWith('x-log-python-') ? "🐍 Python:" : "⦿ Node:";
                 console.log(`${prefix} ${value}`);
                 foundLogs = true;
             }
         });
-        if (!foundLogs) {
-            console.log("No specific log headers found.");
-        }
+        if (!foundLogs) console.log("No specific log headers found.");
         console.groupEnd();
     }
 
+    function parseDownloadCommand(command) {
+        command = command.trim();
+        let match;
+        const gitRegex = /^git\s+clone(?:\s+--depth(?:=|\s+)\d+)?\s+(['"]?)(.+?)\1(?:\s+(['"]?)(.*?)\3)?$/;
+        match = command.match(gitRegex);
+        if (match) {
+            console.log("Frontend detected git clone command");
+            return { type: 'git', url: match[2], targetDir: match[4] };
+        }
+        const wgetRegexSimple = /^wget\s+(['"]?)([^ ]+?)\1$/;
+        const wgetRegexP = /^wget\s+(?:.+?\s+)?-P\s+(['"]?)(.+?)\1\s+(?:.+?\s+)?(['"]?)(.+?)\3(?:\s+.*)?$/;
+        const wgetRegexUrlP = /^wget\s+(?:.+?\s+)?(['"]?)(.+?)\1\s+(?:.+?\s+)?-P\s+(['"]?)(.+?)\3(?:\s+.*)?$/;
+        match = command.match(wgetRegexP);
+        if (match) {
+            console.log("Frontend detected wget -P <dir> <url> command");
+            return { type: 'wget', url: match[4], targetDir: match[2] };
+        }
+         match = command.match(wgetRegexUrlP);
+        if (match) {
+            console.log("Frontend detected wget <url> -P <dir> command");
+            return { type: 'wget', url: match[2], targetDir: match[4] };
+        }
+         match = command.match(wgetRegexSimple);
+        if (match) {
+             console.log("Frontend detected simple wget <url> command");
+            return { type: 'wget', url: match[2], targetDir: null };
+        }
+        return null;
+    }
+
     async function processCommand(command) {
-        if (command.toLowerCase() === 'clear') {
-            clearOutput();
-            return;
-        }
-        if (command.toLowerCase() === 'help') {
-             displayHelp();
-             return;
-        }
+        if (command.toLowerCase() === 'clear') { clearOutput(); displayOutput(getPromptText()); return; }
+        if (command.toLowerCase() === 'help') { displayHelp(); displayOutput(getPromptText()); return; }
 
         isExecuting = true;
         setPromptBusy(true);
         terminalInputElement.disabled = true;
 
-        try {
-            const response = await fetch(NODE_BACKEND_URL, {
+        const downloadInfo = parseDownloadCommand(command);
+        let targetUrl = '';
+        let options = {};
+        let isDownload = false;
+        let backendName = "Node";
+
+        if (downloadInfo) {
+            isDownload = true;
+            backendName = "Python";
+            targetUrl = PYTHON_FETCH_URL;
+            options = {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ command: command })
-            });
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(downloadInfo),
+            };
+            displayOutput(`Sending fetch request to Python backend for ${downloadInfo.type}...\n`);
 
-            logBackendMessages(response.headers);
+        } else {
+            isDownload = false;
+            backendName = "Node";
+            targetUrl = NODE_EXEC_URL;
+            options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: command }),
+            };
+             displayOutput(`Sending command to Node backend...\n`);
+        }
 
+        try {
+            const response = await fetch(targetUrl, options);
+            logBackendMessages(response.headers, backendName);
             const contentType = response.headers.get("content-type");
 
             if (!response.ok) {
-                 let errorData;
-                 let errorText = `Error: ${response.status} ${response.statusText}\n`;
-                 try {
-                      errorData = await response.json();
-                      if (errorData.error) errorText += `Backend Error: ${errorData.error}\n`;
-                      if (errorData.details) errorText += `Details: ${errorData.details}\n`;
-                      if (errorData.stderr) displayErrorOutput(`Stderr: ${errorData.stderr}\n`);
-                      if (errorData.stdout) displayOutput(`Stdout: ${errorData.stdout}\n`);
-                 } catch (e) {
-                      const textError = await response.text();
-                      errorText += `Response Body: ${textError}\n`;
-                 }
-                 console.error("Node Backend Request Failed:", response.status, errorText);
-                 displayErrorOutput(errorText);
+                const errorBodyText = await response.text();
+                let errorDetail = "";
+                try {
+                    const errorJson = JSON.parse(errorBodyText);
+                    errorDetail += `Backend Error: ${errorJson.error || 'Unknown JSON error'}\n`;
+                    if (errorJson.details) errorDetail += `Details: ${errorJson.details}\n`;
+                    if (errorJson.stderr) displayErrorOutput(`Stderr: ${errorJson.stderr}\n`);
+                    if (errorJson.stdout) displayOutput(`Stdout: ${errorJson.stdout}\n`);
+                } catch (e) { if (errorBodyText) { errorDetail += `Response Body: ${errorBodyText}\n`; } }
+                console.error(`${backendName} Backend Request Failed (${response.status}):`, errorDetail || errorBodyText);
+                displayErrorOutput(`Error: ${response.status} ${response.statusText}\n`);
+                displayErrorOutput(errorDetail);
 
-            } else if (contentType && contentType.includes("application/zip")) {
+            } else if (isDownload && contentType && contentType.includes("application/zip")) {
                  displayOutput("Received file archive. Unpacking...\n");
                  const zipBlob = await response.blob();
                  await handleZipResponse(zipBlob);
 
-            } else if (contentType && contentType.includes("application/json")) {
+            } else if (!isDownload && contentType && contentType.includes("application/json")) {
                  const result = await response.json();
-                  if (result.stdout) {
-                      displayOutput(result.stdout);
-                      if (!result.stdout.endsWith('\n')) displayOutput('\n');
+                  if (result.stdout) displayOutput(result.stdout);
+                  if (result.stderr) displayErrorOutput(result.stderr);
+                  if (result.error) displayErrorOutput(`Error Field: ${result.error}\n`);
+                  if ( (result.stdout && !result.stdout.endsWith('\n')) || (result.stderr && !result.stderr.endsWith('\n')) ) {
+                      displayOutput('\n');
                   }
-                  if (result.stderr) {
-                      displayErrorOutput(result.stderr);
-                      if (!result.stderr.endsWith('\n')) displayOutput('\n');
-                  }
-                  if (result.error){
-                        displayErrorOutput(`Error Field: ${result.error}\n`);
-                  }
-                   if (!result.stdout && !result.stderr && !result.error) {
-                   }
 
             } else {
                  const textResponse = await response.text();
-                 console.warn("Received unexpected successful response type:", contentType, textResponse);
-                 displayErrorOutput(`Warn: Unexpected response type from backend (${contentType || 'unknown'}).\n`);
-                 displayOutput(textResponse + '\n');
+                 console.warn(`Received unexpected successful response type from ${backendName} backend:`, contentType, textResponse);
+                 displayErrorOutput(`Warn: Unexpected response type from ${backendName} (${contentType || 'unknown'}).\n`);
+                 displayOutput(textResponse);
+                  if (!textResponse.endsWith('\n')) displayOutput('\n');
             }
 
         } catch (error) {
-            console.error("Terminal fetch network error:", error);
-            displayErrorOutput(`Network Error: Failed to connect to Node backend.\nCheck browser console & backend status.\n${error.message}\n`);
+            console.error(`Terminal fetch network error to ${backendName} backend:`, error);
+            displayErrorOutput(`Network Error: Failed to connect to ${backendName} backend.\nCheck browser console & backend status.\n${error.message}\n`);
         } finally {
             isExecuting = false;
             setPromptBusy(false);
@@ -197,8 +219,7 @@ const TerminalManager = (() => {
 
      async function handleZipResponse(zipBlob) {
           if (typeof JSZip === 'undefined') {
-               displayErrorOutput("Error: JSZip library not loaded. Cannot unpack files.\n");
-               console.error("JSZip not found. Make sure it's included in editor.html.");
+               displayErrorOutput("Error: JSZip library not loaded.\n");
                return;
           }
           const fileManager = window.fileManager;
@@ -209,14 +230,12 @@ const TerminalManager = (() => {
           const updateStat = window.updateStatus;
 
           if (!fileManager || !saveProject || !getCurrentProj || !genId || !getLang || !updateStat) {
-               displayErrorOutput("Error: Cannot access required IDE functions (fileManager, saveProjectToStorage, etc.).\n");
-               console.error("Missing required IDE functions. Ensure they are exposed globally (e.g., window.fileManager = ...).");
+               displayErrorOutput("Error: Required IDE functions missing.\n");
                return;
           }
            let project = getCurrentProj();
            if(!project || !project.files) {
-                displayErrorOutput("Error: Cannot access current project file list.\n");
-                console.error("Current project or project.files is missing.");
+                displayErrorOutput("Error: Cannot access project files.\n");
                 return;
            }
 
@@ -250,7 +269,6 @@ const TerminalManager = (() => {
                               addedFiles.push(fileName);
                               fileCount++;
                          } catch (readError) {
-                              console.error(`Error reading file ${relativePath} from zip:`, readError);
                               displayErrorOutput(`Error unpacking file: ${relativePath}\n`);
                          }
                     }
@@ -270,103 +288,46 @@ const TerminalManager = (() => {
                          displayOutput("Project saved successfully.\n");
                     } else {
                          updateStat(`${fileCount} file(s) added/updated, but save failed!`, 'error');
-                         displayErrorOutput("Error saving updated project to IndexedDB.\n");
+                         displayErrorOutput("Error saving updated project.\n");
                     }
                } else {
                     displayOutput("Archive unpacked, but contained no files.\n");
                }
 
           } catch (error) {
-               console.error("Error processing ZIP file:", error);
                displayErrorOutput(`Error unpacking archive: ${error.message}\n`);
           }
      }
 
      function displayHelp() {
-          displayOutput("RyxIDE Terminal Help (HTTP Proxy Mode):\n\n");
+          displayOutput("RyxIDE Terminal Help (Dual Backend Mode):\n\n");
           displayOutput("  Client-Side:\n");
           displayOutput("    clear       Clear the terminal screen (or Ctrl+L)\n");
           displayOutput("    help        Show this help message\n\n");
-          displayOutput("  Proxied Commands (Downloads files into IDE):\n");
-          displayOutput("    git clone <url> [dir]  Clones repo into IDE files\n");
-          displayOutput("    wget <url>             Downloads file into IDE files\n");
-          displayOutput("  Other Commands (Executed remotely, output shown):\n");
-          displayOutput("    ls, pwd, mkdir, touch, cp, mv, rm, cat, echo, curl, ping, git status/pull/push/..., node, npm, python, etc.\n\n");
+          displayOutput("  Download Commands (Uses Python Backend -> Adds to IDE):\n");
+          displayOutput("    git clone <url> [dir]  Clones repo\n");
+          displayOutput("    wget <url>             Downloads file\n");
+          displayOutput("  Other Commands (Uses Node.js Backend -> Shows Output):\n");
+          displayOutput("    ls, pwd, echo, cat, node, npm, python, git status/pull/..., etc.\n\n");
           displayOutput("  Keyboard Shortcuts:\n");
-          displayOutput("    Enter       Execute command\n");
-          displayOutput("    ArrowUp     Previous command in history\n");
-          displayOutput("    ArrowDown   Next command in history\n");
-          displayOutput("    Ctrl+L      Clear screen\n\n");
+          displayOutput("    Enter, ArrowUp/Down, Ctrl+L\n\n");
           displayOutput("  LIMITATIONS:\n");
-          displayOutput("  * Mostly Stateless: 'cd', 'export' don't persist.\n");
-          displayOutput("  * No Interactivity: 'vim', 'python' REPL, etc. won't work.\n");
-          displayOutput("  * No Streaming Output: Output appears after command finishes.\n");
-          displayOutput("  * Timeouts Apply: Long commands/downloads might fail.\n");
-          scrollToBottom();
+          displayOutput("  * Node commands are stateless ('cd' doesn't persist).\n");
+          displayOutput("  * No interactive commands (vim, python REPL, etc.).\n");
+          displayOutput("  * No streaming output.\n");
+          displayOutput("  * Timeouts apply to all backend operations.\n");
      }
 
-    function getPromptText() {
-         return isExecuting ? '$ ' : '> ';
-    }
+    function getPromptText() { return isExecuting ? '$ ' : '> '; }
+    function setPromptBusy(busy) { if (terminalPromptElement) { terminalPromptElement.textContent = getPromptText(); terminalPromptElement.style.color = busy ? 'var(--text-warning)' : 'var(--text-success)'; } }
+    function displayCommand(command) { if (!terminalOutputElement) return; displayOutput(`${'> '}${typeof escapeHtml === 'function' ? escapeHtml(command) : command}\n`); }
+    function displayOutput(text) { if (!terminalOutputElement || text === null || typeof text === 'undefined') return; terminalOutputElement.appendChild(document.createTextNode(String(text))); scrollToBottom(); }
+    function displayErrorOutput(text) { if (!terminalOutputElement || text === null || typeof text === 'undefined') return; const span = document.createElement('span'); span.style.color = 'var(--text-danger)'; span.appendChild(document.createTextNode(String(text))); terminalOutputElement.appendChild(span); scrollToBottom(); }
+    function clearOutput() { if (terminalOutputElement) terminalOutputElement.innerHTML = ''; }
+    function scrollToBottom() { if (terminalOutputElement) requestAnimationFrame(() => { terminalOutputElement.scrollTop = terminalOutputElement.scrollHeight; }); }
+    function ensureInputFocus() { setTimeout(() => { if (terminalInputElement && !terminalInputElement.disabled) terminalInputElement.focus(); }, 0); }
 
-    function setPromptBusy(busy) {
-         if (!terminalPromptElement) return;
-         terminalPromptElement.textContent = getPromptText();
-         terminalPromptElement.style.color = busy ? 'var(--text-warning)' : 'var(--text-success)';
-    }
-
-    function displayCommand(command) {
-        if (!terminalOutputElement) return;
-        const promptText = '> ';
-        if (typeof escapeHtml !== 'function') {
-             console.error("escapeHtml function not found!");
-             terminalOutputElement.appendChild(document.createTextNode(`${promptText}${command}\n`));
-        } else {
-            displayOutput(`${promptText}${escapeHtml(command)}\n`);
-        }
-    }
-
-    function displayOutput(text) {
-        if (!terminalOutputElement || text === null || typeof text === 'undefined') return;
-        terminalOutputElement.appendChild(document.createTextNode(String(text)));
-        scrollToBottom();
-    }
-
-    function displayErrorOutput(text) {
-        if (!terminalOutputElement || text === null || typeof text === 'undefined') return;
-        const errorSpan = document.createElement('span');
-        errorSpan.style.color = 'var(--text-danger)';
-        errorSpan.appendChild(document.createTextNode(String(text)));
-        terminalOutputElement.appendChild(errorSpan);
-        scrollToBottom();
-    }
-
-     function clearOutput() {
-          if (terminalOutputElement) {
-               terminalOutputElement.innerHTML = '';
-          }
-           displayOutput(getPromptText());
-     }
-
-    function scrollToBottom() {
-        if (terminalOutputElement) {
-            requestAnimationFrame(() => {
-                terminalOutputElement.scrollTop = terminalOutputElement.scrollHeight;
-            });
-        }
-    }
-
-     function ensureInputFocus() {
-         setTimeout(() => {
-              if (terminalInputElement && !terminalInputElement.disabled) {
-                   terminalInputElement.focus();
-              }
-         }, 0);
-     }
-
-    return {
-        initialize: initialize
-    };
+    return { initialize: initialize };
 })();
 
-console.log("terminal.js (multi-backend proxy mode) parsed.");
+console.log("terminal.js (dual-backend direct mode) parsed.");
