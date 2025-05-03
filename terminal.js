@@ -1,5 +1,5 @@
 const TerminalManager = (() => {
-    const BACKEND_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
+    const NODE_BACKEND_URL = 'https://ryxide-backend-terminal.onrender.com/execute';
 
     let terminalOutputElement = null;
     let terminalInputElement = null;
@@ -17,6 +17,10 @@ const TerminalManager = (() => {
             console.error("Terminal elements not found during initialization.");
             return;
         }
+        if (NODE_BACKEND_URL.includes('YOUR_NODE_PROXY_BACKEND_URL')) {
+             console.warn("Terminal NODE_BACKEND_URL needs to be updated in terminal.js!");
+             displayErrorOutput("ERROR: Terminal backend URL is not configured.\n");
+        }
 
         terminalInputElement.addEventListener('keydown', handleKeyDown);
         terminalOutputElement.addEventListener('click', () => {
@@ -25,10 +29,9 @@ const TerminalManager = (() => {
             }
         });
 
-        displayOutput("Welcome to RyxTerminal (Connected to Backend)\n");
-        displayOutput("Type 'help' for common Linux commands.\n");
-        displayOutput("Note: This is a stateless terminal via HTTP.\n");
-        displayOutput("Commands like 'cd' won't persist. Long tasks might time out.\n");
+        displayOutput("Welcome to RyxTerminal (Experimental Multi-Backend Mode)\n");
+        displayOutput("Type 'help' for commands. 'git clone'/'wget' proxied.\n");
+        displayOutput("Note: Still mostly stateless via HTTP.\n");
         ensureInputFocus();
     }
 
@@ -91,6 +94,22 @@ const TerminalManager = (() => {
           }
      }
 
+    function logBackendMessages(responseHeaders) {
+        console.groupCollapsed("[Backend Logs]");
+        let foundLogs = false;
+        responseHeaders.forEach((value, name) => {
+            if (name.toLowerCase().startsWith('x-log-proxy-') || name.toLowerCase().startsWith('x-log-python-')) {
+                const prefix = name.toLowerCase().startsWith('x-log-python-') ? "🐍 Python:" : "⦿ Node:";
+                console.log(`${prefix} ${value}`);
+                foundLogs = true;
+            }
+        });
+        if (!foundLogs) {
+            console.log("No specific log headers found.");
+        }
+        console.groupEnd();
+    }
+
     async function processCommand(command) {
         if (command.toLowerCase() === 'clear') {
             clearOutput();
@@ -100,13 +119,17 @@ const TerminalManager = (() => {
              displayHelp();
              return;
         }
+         if (NODE_BACKEND_URL.includes('YOUR_NODE_PROXY_BACKEND_URL')) {
+              displayErrorOutput("ERROR: Terminal backend URL is not configured.\n");
+              return;
+         }
 
         isExecuting = true;
         setPromptBusy(true);
         terminalInputElement.disabled = true;
 
         try {
-            const response = await fetch(BACKEND_URL, {
+            const response = await fetch(NODE_BACKEND_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -114,51 +137,52 @@ const TerminalManager = (() => {
                 body: JSON.stringify({ command: command })
             });
 
-            const responseText = await response.text();
-            let result = {};
+            logBackendMessages(response.headers);
+
+            const contentType = response.headers.get("content-type");
 
             if (!response.ok) {
-                 console.error(`Backend Error (Status: ${response.status}):`, responseText);
-                 let errorMsg = `Error: ${response.status} ${response.statusText}\n`;
-                 try {
-                      result = JSON.parse(responseText);
-                      if(result.error) errorMsg += `Backend: ${result.error}\n`;
-                      if(result.stderr) displayErrorOutput(`Stderr: ${result.stderr}\n`);
-                      if(result.stdout) displayOutput(`Stdout: ${result.stdout}\n`);
-                 } catch(e) {
-                      errorMsg += `Backend Response: ${responseText}\n`;
-                 }
-                 displayErrorOutput(errorMsg);
+                 let errorData;
+                 try { errorData = await response.json(); } catch { errorData = { error: await response.text() }; }
+                 console.error("Node Backend Error:", errorData);
+                 displayErrorOutput(`Error: ${response.status} ${response.statusText}\n`);
+                 if (errorData.error) displayErrorOutput(`Backend: ${errorData.error}\n`);
+                 if (errorData.details) displayErrorOutput(`Details: ${errorData.details}\n`);
+                 if (errorData.stderr) displayErrorOutput(`Stderr: ${errorData.stderr}\n`);
+                 if (errorData.stdout) displayOutput(`Stdout: ${errorData.stdout}\n`);
+
+            } else if (contentType && contentType.includes("application/zip")) {
+                 displayOutput("Received file archive. Unpacking...\n");
+                 const zipBlob = await response.blob();
+                 await handleZipResponse(zipBlob);
+
+            } else if (contentType && contentType.includes("application/json")) {
+                 const result = await response.json();
+                  if (result.stdout) {
+                      displayOutput(result.stdout);
+                      if (!result.stdout.endsWith('\n')) displayOutput('\n');
+                  }
+                  if (result.stderr) {
+                      displayErrorOutput(result.stderr);
+                      if (!result.stderr.endsWith('\n')) displayOutput('\n');
+                  }
+                  if (result.error && response.status >= 400){
+                        displayErrorOutput(`Error: ${result.error}\n`);
+                  }
+                   if (!result.stdout && !result.stderr && !result.error) {
+
+                   }
 
             } else {
-                 try {
-                      result = JSON.parse(responseText);
-                      if (result.stdout) {
-                           displayOutput(result.stdout);
-                           if (!result.stdout.endsWith('\n')) {
-                                displayOutput('\n');
-                           }
-                      }
-                      if (result.stderr) {
-                           displayErrorOutput(result.stderr);
-                            if (!result.stderr.endsWith('\n')) {
-                                displayOutput('\n');
-                           }
-                      }
-                      if (!result.stdout && !result.stderr) {
-                           displayOutput('\n');
-                      }
-
-                 } catch (jsonError) {
-                      console.error("Failed to parse JSON response despite OK status:", responseText);
-                      displayErrorOutput(`Error: Received non-JSON response from backend (Status: ${response.status})\n`);
-                      displayErrorOutput(responseText + "\n");
-                 }
+                 const textResponse = await response.text();
+                 console.warn("Received unexpected response type:", contentType, textResponse);
+                 displayErrorOutput(`Error: Unexpected response type from backend (${contentType || 'unknown'}).\n`);
+                 displayOutput(textResponse + '\n');
             }
 
         } catch (error) {
             console.error("Terminal fetch error:", error);
-            displayErrorOutput(`Network Error: Failed to connect to backend.\n${error.message}\n`);
+            displayErrorOutput(`Network Error: Failed to connect to Node backend.\n${error.message}\n`);
         } finally {
             isExecuting = false;
             setPromptBusy(false);
@@ -168,23 +192,107 @@ const TerminalManager = (() => {
         }
     }
 
+     async function handleZipResponse(zipBlob) {
+          if (typeof JSZip === 'undefined') {
+               displayErrorOutput("Error: JSZip library not loaded. Cannot unpack files.\n");
+               console.error("JSZip not found. Make sure it's included in editor.html.");
+               return;
+          }
+          const fileManager = window.fileManager;
+          const saveProject = window.saveProjectToStorage;
+          const getCurrentProj = () => window.currentProject;
+          const genId = window.generateUUID;
+          const getLang = window.getLanguageFromFilename;
+          const updateStat = window.updateStatus;
+
+          if (!fileManager || !saveProject || !getCurrentProj || !genId || !getLang || !updateStat) {
+               displayErrorOutput("Error: Cannot access required IDE functions (fileManager, saveProjectToStorage, etc.).\n");
+               console.error("Missing required IDE functions. Ensure they are exposed globally (e.g., window.fileManager = ...).");
+               return;
+          }
+           let project = getCurrentProj();
+           if(!project || !project.files) {
+                displayErrorOutput("Error: Cannot access current project file list.\n");
+                console.error("Current project or project.files is missing.");
+                return;
+           }
+
+          try {
+               const zip = await JSZip.loadAsync(zipBlob);
+               let fileCount = 0;
+               const addedFiles = [];
+               let updatedProject = { ...project, files: [...project.files] };
+
+               await Promise.all(Object.keys(zip.files).map(async (relativePath) => {
+                    const zipEntry = zip.files[relativePath];
+                    if (!zipEntry.dir) {
+                         try {
+                              const fileContent = await zipEntry.async("string");
+                              const fileName = relativePath;
+                              const lang = getLang(fileName);
+                              const existingFileIndex = updatedProject.files.findIndex(f => f.name === fileName);
+                              const newFile = {
+                                   id: existingFileIndex > -1 ? updatedProject.files[existingFileIndex].id : genId(),
+                                   name: fileName,
+                                   language: lang,
+                                   content: fileContent
+                              };
+                              if (existingFileIndex > -1) {
+                                   updatedProject.files[existingFileIndex] = newFile;
+                              } else {
+                                   updatedProject.files.push(newFile);
+                              }
+                              addedFiles.push(fileName);
+                              fileCount++;
+                         } catch (readError) {
+                              console.error(`Error reading file ${relativePath} from zip:`, readError);
+                              displayErrorOutput(`Error unpacking file: ${relativePath}\n`);
+                         }
+                    }
+               }));
+
+               if (fileCount > 0) {
+                    displayOutput(`Successfully unpacked and added/updated ${fileCount} file(s):\n`);
+                    addedFiles.forEach(f => displayOutput(`  - ${f}\n`));
+                    window.currentProject = updatedProject;
+                    fileManager.renderList();
+                    const saved = await saveProject(updatedProject);
+                    if(saved) {
+                         updateStat(`${fileCount} file(s) added/updated & saved.`, 'success');
+                    } else {
+                         updateStat(`${fileCount} file(s) added/updated, but save failed!`, 'error');
+                         displayErrorOutput("Error saving updated project to IndexedDB.\n");
+                    }
+               } else {
+                    displayOutput("Archive unpacked, but contained no files.\n");
+               }
+          } catch (error) {
+               console.error("Error processing ZIP file:", error);
+               displayErrorOutput(`Error unpacking archive: ${error.message}\n`);
+          }
+     }
+
      function displayHelp() {
-         displayOutput("RyxIDE Terminal Help (HTTP Backend Mode):\n");
-         displayOutput("  This terminal sends commands to a remote server for execution.\n");
-         displayOutput("  Standard Linux/Bash commands should work (e.g., ls, pwd, echo, cat, grep, mkdir, rm, touch, wget, curl, git, node, python, etc.).\n\n");
-         displayOutput("  Client-side Commands:\n");
-         displayOutput("    clear     - Clear the terminal screen (or Ctrl+L)\n");
-         displayOutput("    help      - Show this help message\n\n");
-         displayOutput("  Keyboard Shortcuts:\n");
-         displayOutput("    Enter     - Execute command\n");
-         displayOutput("    ArrowUp   - Previous command in history\n");
-         displayOutput("    ArrowDown - Next command in history\n");
-         displayOutput("    Ctrl+L    - Clear screen\n\n");
-         displayOutput("  Limitations:\n");
-         displayOutput("  * No persistent state: 'cd' has no lasting effect.\n");
-         displayOutput("  * No interactive commands (like 'python' REPL or 'ssh').\n");
-         displayOutput("  * No real-time output streaming.\n");
-         displayOutput("  * Commands may time out (server limits).\n");
+          displayOutput("RyxIDE Terminal Help (HTTP Proxy Mode):\n\n");
+          displayOutput("  Client-Side:\n");
+          displayOutput("    clear       Clear the terminal screen (or Ctrl+L)\n");
+          displayOutput("    help        Show this help message\n\n");
+          displayOutput("  Proxied Commands (Downloads files into IDE):\n");
+          displayOutput("    git clone <url> [dir]  Clones repo into IDE files\n");
+          displayOutput("    wget <url>             Downloads file into IDE files\n");
+          displayOutput("  Other Commands (Executed remotely, output shown):\n");
+          displayOutput("    ls, pwd, mkdir, touch, cp, mv, rm, cat, echo, curl, ping, git status/pull/push/..., node, npm, python, etc.\n\n");
+          displayOutput("  Keyboard Shortcuts:\n");
+          displayOutput("    Enter       Execute command\n");
+          displayOutput("    ArrowUp     Previous command in history\n");
+          displayOutput("    ArrowDown   Next command in history\n");
+          displayOutput("    Ctrl+L      Clear screen\n\n");
+          displayOutput("  LIMITATIONS:\n");
+          displayOutput("  * Mostly Stateless: 'cd', 'export' don't persist.\n");
+          displayOutput("  * No Interactivity: 'vim', 'python' REPL, etc. won't work.\n");
+          displayOutput("  * No Streaming Output: Output appears after command finishes.\n");
+          displayOutput("  * Timeouts Apply: Long commands/downloads might fail.\n");
+          scrollToBottom();
      }
 
     function getPromptText() {
@@ -200,17 +308,22 @@ const TerminalManager = (() => {
     function displayCommand(command) {
         if (!terminalOutputElement) return;
         const promptText = '> ';
-        displayOutput(`${promptText}${escapeHtml(command)}\n`);
+        if (typeof escapeHtml !== 'function') {
+             console.error("escapeHtml function not found!");
+             terminalOutputElement.appendChild(document.createTextNode(`${promptText}${command}\n`));
+        } else {
+            displayOutput(`${promptText}${escapeHtml(command)}\n`);
+        }
     }
 
     function displayOutput(text) {
-        if (!terminalOutputElement || !text) return;
+        if (!terminalOutputElement || text === null || typeof text === 'undefined') return;
         terminalOutputElement.appendChild(document.createTextNode(String(text)));
         scrollToBottom();
     }
 
     function displayErrorOutput(text) {
-        if (!terminalOutputElement || !text) return;
+        if (!terminalOutputElement || text === null || typeof text === 'undefined') return;
         const errorSpan = document.createElement('span');
         errorSpan.style.color = 'var(--text-danger)';
         errorSpan.appendChild(document.createTextNode(String(text)));
@@ -245,4 +358,4 @@ const TerminalManager = (() => {
     };
 })();
 
-console.log("terminal.js parsed and TerminalManager should be defined now.");
+console.log("terminal.js (multi-backend proxy mode) parsed.");
