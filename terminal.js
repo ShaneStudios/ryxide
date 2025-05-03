@@ -19,7 +19,7 @@ const TerminalManager = (() => {
             return;
         }
 
-        console.log("Terminal Initialized.");
+        console.log("Terminal Initializing...");
         console.log("Node Executor Target:", NODE_EXEC_URL);
         console.log("Python Fetcher Target:", PYTHON_FETCH_URL);
 
@@ -27,6 +27,13 @@ const TerminalManager = (() => {
              console.error("FATAL: Backend URLs are not configured in terminal.js!");
              displayErrorOutput("FATAL ERROR: Terminal backend URLs are not configured.\n");
          }
+
+        if (typeof JSZip === 'undefined') {
+            console.error("Terminal Initialize ERROR: JSZip library is NOT loaded or defined at this point!");
+            displayErrorOutput("ERROR: Required ZIP library failed to load. File fetching commands will fail.\n");
+        } else {
+            console.log("Terminal Initialize: JSZip library found successfully.");
+        }
 
         terminalInputElement.addEventListener('keydown', handleKeyDown);
         terminalOutputElement.addEventListener('click', () => {
@@ -126,6 +133,11 @@ const TerminalManager = (() => {
     async function processCommand(command) {
         if (command.toLowerCase() === 'clear') { clearOutput(); displayOutput(getPromptText()); return; }
         if (command.toLowerCase() === 'help') { displayHelp(); displayOutput(getPromptText()); return; }
+         if (NODE_EXEC_URL.includes('YOUR_') || PYTHON_FETCH_URL.includes('YOUR_')) {
+              displayErrorOutput("FATAL ERROR: Terminal backend URLs are not configured.\n");
+              isExecuting = false; setPromptBusy(false); terminalInputElement.disabled = false; displayOutput(getPromptText()); ensureInputFocus();
+              return;
+         }
 
         isExecuting = true;
         setPromptBusy(true);
@@ -219,7 +231,8 @@ const TerminalManager = (() => {
 
      async function handleZipResponse(zipBlob) {
           if (typeof JSZip === 'undefined') {
-               displayErrorOutput("Error: JSZip library not loaded.\n");
+               displayErrorOutput("Error: JSZip library not loaded. Cannot unpack files.\n");
+               console.error("handleZipResponse ERROR: JSZip is not defined. Ensure it's loaded *before* terminal.js.");
                return;
           }
           const fileManager = window.fileManager;
@@ -231,11 +244,13 @@ const TerminalManager = (() => {
 
           if (!fileManager || !saveProject || !getCurrentProj || !genId || !getLang || !updateStat) {
                displayErrorOutput("Error: Required IDE functions missing.\n");
+               console.error("handleZipResponse ERROR: Missing required IDE functions (fileManager, etc.). Ensure they are exposed globally.");
                return;
           }
            let project = getCurrentProj();
            if(!project || !project.files) {
                 displayErrorOutput("Error: Cannot access project files.\n");
+                console.error("handleZipResponse ERROR: Current project or project.files is missing.");
                 return;
            }
 
@@ -269,6 +284,7 @@ const TerminalManager = (() => {
                               addedFiles.push(fileName);
                               fileCount++;
                          } catch (readError) {
+                              console.error(`Error reading file ${relativePath} from zip:`, readError);
                               displayErrorOutput(`Error unpacking file: ${relativePath}\n`);
                          }
                     }
@@ -295,6 +311,7 @@ const TerminalManager = (() => {
                }
 
           } catch (error) {
+               console.error("Error processing ZIP file:", error);
                displayErrorOutput(`Error unpacking archive: ${error.message}\n`);
           }
      }
