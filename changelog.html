@@ -23,12 +23,22 @@
             <main id="changelog-content">
                 <section class="changelog-entry">
                     <h2>v0.1.7 Beta</h2>
-                    <span class="changelog-date">Date: April 29th, 2025 - May 2nd, 2025</span>
+                    <span class="changelog-date">Date: April 30, 2025 - May 5th, 2025</span>
                     <ul>
-                        <li><i class="fas fa-terminal"></i> Added integrated terminal, made from scratch.</li>
+                        <li><i class="fas fa-terminal"></i> Integrated Terminal Tab: Added a new panel for terminal commands.</li>
+                        <li><i class="fas fa-network-wired"></i> Dual Backend Terminal:
+                            <ul>
+                                <li>Node.js backend for standard command execution (stateless).</li>
+                                <li>Python backend proxy for file fetching commands ("git clone", "wget").</li>
+                            </ul>
+                        </li>
+                        <li><i class="fas fa-download"></i> Terminal File Fetching: Implemented ability for "git clone" and "wget" commands in the terminal to download files/repos and add them directly to the IDE's file list using JSZip.</li>
+                        <li><i class="fas fa-mobile-alt"></i> Responsive Layout: Improved layout adaptation between desktop (sidebar preview) and mobile (tabbed preview).</li>
+                         <li><i class="fas fa-bug"></i> JSZip Integration Fix: Resolved issues with loading the JSZip library for file unpacking.</li>
+                         <li><i class="fas fa-cogs"></i> Backend Connection Logic: Added retry mechanisms and improved logging for backend connections.</li>
+                        <li><i class="fas fa-book"></i> Updated Terminal "help" command with more details and examples.</li>
                         <li><i class="fas fa-file-alt"></i> Added Changelog page.</li>
                         <li><i class="fas fa-users"></i> Added Credits & Resources page.</li>
-                        <li><i class="fas fa-bug"></i> Fixed various bugs.</li>
                     </ul>
                 </section>
 
