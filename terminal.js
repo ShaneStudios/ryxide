@@ -114,7 +114,22 @@ const TerminalManager = (() => {
                 body: JSON.stringify({ command: command })
             });
 
-            const result = await response.json();
+            const responseText = await response.text();
+            let result;
+
+            try {
+                result = JSON.parse(responseText);
+            } catch(jsonError) {
+                console.error("Failed to parse JSON response:", responseText);
+                 displayErrorOutput(`Error: Received non-JSON response from backend (Status: ${response.status})\n`);
+                 displayErrorOutput(responseText + "\n");
+                 result = { error: "Invalid JSON response", stdout: '', stderr: '' };
+                  if (!response.ok) {
+                  } else {
+                       displayErrorOutput("Backend returned OK status but invalid JSON.\n");
+                  }
+            }
+
 
             if (response.ok) {
                 if (result.stdout) {
@@ -196,15 +211,15 @@ const TerminalManager = (() => {
     }
 
     function displayOutput(text) {
-        if (!terminalOutputElement) return;
-        terminalOutputElement.appendChild(document.createTextNode(text));
+        if (!terminalOutputElement || !text) return;
+        terminalOutputElement.appendChild(document.createTextNode(String(text)));
     }
 
     function displayErrorOutput(text) {
-        if (!terminalOutputElement) return;
+        if (!terminalOutputElement || !text) return;
         const errorSpan = document.createElement('span');
         errorSpan.style.color = 'var(--text-danger)';
-        errorSpan.appendChild(document.createTextNode(text));
+        errorSpan.appendChild(document.createTextNode(String(text)));
         terminalOutputElement.appendChild(errorSpan);
     }
 
@@ -244,3 +259,5 @@ function escapeHtml(unsafe) {
       .replace(/"/g, """)
       .replace(/'/g, "'");
 }
+
+console.log("terminal.js parsed and TerminalManager should be defined now.");
